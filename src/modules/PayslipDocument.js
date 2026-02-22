@@ -1,13 +1,20 @@
 import { payrollService } from '../core/payroll.js';
 
 export function renderPayslipDocument(payslipId) {
-  const payslip = payrollService.getPayslip(payslipId);
+  const container = document.createElement('div');
+  container.innerHTML = '<div class="text-muted text-center py-8">Loading payslip...</div>';
+  loadPayslipDocument(container, payslipId);
+  return container;
+}
+
+async function loadPayslipDocument(container, payslipId) {
+  const payslip = await payrollService.getPayslip(payslipId);
 
   if (!payslip) {
-    return '<div class="text-center p-8"><h3>Payslip not found</h3></div>';
+    container.innerHTML = '<div class="text-center p-8"><h3>Payslip not found</h3></div>';
+    return;
   }
 
-  const container = document.createElement('div');
   container.className = 'payslip-document';
 
   container.innerHTML = `
@@ -45,7 +52,7 @@ export function renderPayslipDocument(payslipId) {
       }
 
       .payslip-header {
-        border-bottom: 3px solid #3b82f6;
+        border-bottom: 3px solid #111111;
         padding-bottom: 20px;
         margin-bottom: 30px;
       }
@@ -53,7 +60,7 @@ export function renderPayslipDocument(payslipId) {
       .company-logo {
         font-size: 28pt;
         font-weight: bold;
-        color: #3b82f6;
+        color: #111111;
         margin-bottom: 5px;
       }
 
@@ -94,7 +101,7 @@ export function renderPayslipDocument(payslipId) {
         font-weight: bold;
         font-size: 14pt;
         margin: 25px 0 15px 0;
-        border-left: 4px solid #3b82f6;
+        border-left: 4px solid #ccff00;
       }
 
       .payslip-table {
@@ -132,7 +139,7 @@ export function renderPayslipDocument(payslipId) {
       }
 
       .net-salary-box {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: #111111;
         color: white;
         padding: 20px;
         border-radius: 8px;
@@ -207,11 +214,11 @@ export function renderPayslipDocument(payslipId) {
 
       <!-- Header -->
       <div class="payslip-header">
-        <div class="company-logo">Erayaa HRMS</div>
+        <div class="company-logo">Subix HRMS</div>
         <div style="color: #666; font-size: 11pt;">Human Resource Management System</div>
         <div style="color: #666; font-size: 10pt; margin-top: 5px;">
           Corporate Office | HR Department<br/>
-          Email: hr@erayaa.com | Phone: +91-XXXXXXXXXX
+          Email: hr@subix.io | Phone: +91-XXXXXXXXXX
         </div>
       </div>
 
@@ -409,7 +416,7 @@ export function renderPayslipDocument(payslipId) {
         <div class="signature-box">
           <div class="signature-line">Authorized Signatory</div>
           <div style="margin-top: 10px; font-size: 10pt; color: #666;">
-            For HRMS Company
+            For Subix HRMS Company
           </div>
         </div>
       </div>
@@ -425,7 +432,7 @@ export function renderPayslipDocument(payslipId) {
           Status: ${payslip.status.toUpperCase()}
         </div>
         <div style="text-align: center; margin-top: 15px; padding-top: 15px; border-top: 1px solid #e2e8f0;">
-          <strong>HRMS</strong> - Complete Transparency in HR Management<br/>
+          <strong>Subix HRMS</strong> - Complete Transparency in HR Management<br/>
           <span style="font-size: 9pt;">This document is confidential and intended for the addressee only.</span>
         </div>
       </div>

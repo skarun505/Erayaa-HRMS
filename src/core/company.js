@@ -1,186 +1,136 @@
 import { db } from '../core/database.js';
 import { authService } from '../core/auth.js';
 
-// Company Management Service
+// Company Management Service (Supabase-backed)
 class CompanyService {
-    constructor() {
-        this.initializeDefaults();
-    }
+    constructor() { }
 
-    initializeDefaults() {
-        // Initialize departments if not exists
-        if (!db.get('departments')) {
-            db.set('departments', [
-                { id: 'DEPT001', name: 'Engineering', headId: null, status: 'active', createdAt: new Date().toISOString() },
-                { id: 'DEPT002', name: 'Human Resources', headId: null, status: 'active', createdAt: new Date().toISOString() },
-                { id: 'DEPT003', name: 'Finance', headId: null, status: 'active', createdAt: new Date().toISOString() },
-                { id: 'DEPT004', name: 'Sales & Marketing', headId: null, status: 'active', createdAt: new Date().toISOString() }
-            ]);
-        }
-
-        // Initialize designations if not exists
-        if (!db.get('designations')) {
-            db.set('designations', [
-                { id: 'DES001', name: 'Junior Developer', level: 1, departmentId: 'DEPT001', status: 'active' },
-                { id: 'DES002', name: 'Senior Developer', level: 2, departmentId: 'DEPT001', status: 'active' },
-                { id: 'DES003', name: 'Team Lead', level: 3, departmentId: 'DEPT001', status: 'active' },
-                { id: 'DES004', name: 'Engineering Manager', level: 4, departmentId: 'DEPT001', status: 'active' },
-                { id: 'DES005', name: 'HR Executive', level: 1, departmentId: 'DEPT002', status: 'active' },
-                { id: 'DES006', name: 'HR Manager', level: 2, departmentId: 'DEPT002', status: 'active' }
-            ]);
-        }
-
-        // Initialize holidays if not exists
-        if (!db.get('holidays')) {
-            db.set('holidays', [
-                { id: 'HOL001', name: 'New Year', date: '2025-01-01', type: 'public', year: 2025 },
-                { id: 'HOL002', name: 'Republic Day', date: '2025-01-26', type: 'public', year: 2025 },
-                { id: 'HOL003', name: 'Independence Day', date: '2025-08-15', type: 'public', year: 2025 },
-                { id: 'HOL004', name: 'Gandhi Jayanti', date: '2025-10-02', type: 'public', year: 2025 },
-                { id: 'HOL005', name: 'Diwali', date: '2025-10-23', type: 'public', year: 2025 }
-            ]);
-        }
+    // Initialize defaults (seeds are handled by SQL migration)
+    async initializeDefaults() {
+        // No-op: seed data is in the SQL migration
     }
 
     // Company CRUD
-    getCompany() {
-        return db.get('company');
+    async getCompany() {
+        return await db.getOne('company', 'id', 'COMP001');
     }
 
-    updateCompany(data) {
-        const company = this.getCompany() || {};
-        const updated = { ...company, ...data, updatedAt: new Date().toISOString() };
-        db.set('company', updated);
-        this.logAction('company_updated', 'Company details updated');
-        return updated;
-    }
-
-    // Department CRUD
-    getDepartments() {
-        return db.get('departments') || [];
-    }
-
-    getDepartment(id) {
-        const departments = this.getDepartments();
-        return departments.find(d => d.id === id);
-    }
-
-    addDepartment(name, headId = null) {
-        const departments = this.getDepartments();
-        const newDept = {
-            id: 'DEPT' + String(departments.length + 1).padStart(3, '0'),
-            name,
-            headId,
-            status: 'active',
-            createdAt: new Date().toISOString()
-        };
-        departments.push(newDept);
-        db.set('departments', departments);
-        this.logAction('department_created', `Department ${name} created`);
-        return newDept;
-    }
-
-    updateDepartment(id, data) {
-        const departments = this.getDepartments();
-        const index = departments.findIndex(d => d.id === id);
-        if (index !== -1) {
-            departments[index] = { ...departments[index], ...data, updatedAt: new Date().toISOString() };
-            db.set('departments', departments);
-            this.logAction('department_updated', `Department ${id} updated`);
-            return departments[index];
+    async updateCompany(data) {
+        const company = await this.getCompany();
+        const updates = { ...data, updated_at: new Date().toISOString() };
+        if (company) {
+            const updated = await db.update('company', 'id', company.id, updates);
+            await this.logAction('company_updated', 'Company details updated');
+            return updated;
         }
         return null;
     }
 
-    deleteDepartment(id) {
-        const departments = this.getDepartments();
-        const filtered = departments.filter(d => d.id !== id);
-        db.set('departments', filtered);
-        this.logAction('department_deleted', `Department ${id} deleted`);
-        return true;
+    // Department CRUD
+    async getDepartments() {
+        return await db.getAll('departments');
+    }
+
+    async getDepartment(id) {
+        return await db.getOne('departments', 'id', id);
+    }
+
+    async addDepartment(name, headId = null) {
+        const departments = await this.getDepartments();
+        const newDept = {
+            id: 'DEPT' + String(departments.length + 1).padStart(3, '0'),
+            name,
+            head_id: headId,
+            status: 'active'
+        };
+        const inserted = await db.insert('departments', newDept);
+        await this.logAction('department_created', `Department ${name} created`);
+        return inserted;
+    }
+
+    async updateDepartment(id, data) {
+        const updates = { ...data, updated_at: new Date().toISOString() };
+        const updated = await db.update('departments', 'id', id, updates);
+        if (updated) {
+            await this.logAction('department_updated', `Department ${id} updated`);
+        }
+        return updated;
+    }
+
+    async deleteDepartment(id) {
+        const result = await db.deleteRow('departments', 'id', id);
+        await this.logAction('department_deleted', `Department ${id} deleted`);
+        return result;
     }
 
     // Designation CRUD
-    getDesignations() {
-        return db.get('designations') || [];
+    async getDesignations() {
+        return await db.getAll('designations');
     }
 
-    getDesignationsByDepartment(departmentId) {
-        return this.getDesignations().filter(d => d.departmentId === departmentId);
+    async getDesignationsByDepartment(departmentId) {
+        return await db.getAll('designations', { department_id: departmentId });
     }
 
-    addDesignation(name, level, departmentId) {
-        const designations = this.getDesignations();
+    async addDesignation(name, level, departmentId) {
+        const designations = await this.getDesignations();
         const newDes = {
             id: 'DES' + String(designations.length + 1).padStart(3, '0'),
             name,
             level,
-            departmentId,
-            status: 'active',
-            createdAt: new Date().toISOString()
+            department_id: departmentId,
+            status: 'active'
         };
-        designations.push(newDes);
-        db.set('designations', designations);
-        this.logAction('designation_created', `Designation ${name} created`);
-        return newDes;
+        const inserted = await db.insert('designations', newDes);
+        await this.logAction('designation_created', `Designation ${name} created`);
+        return inserted;
     }
 
-    updateDesignation(id, data) {
-        const designations = this.getDesignations();
-        const index = designations.findIndex(d => d.id === id);
-        if (index !== -1) {
-            designations[index] = { ...designations[index], ...data };
-            db.set('designations', designations);
-            this.logAction('designation_updated', `Designation ${id} updated`);
-            return designations[index];
+    async updateDesignation(id, data) {
+        const updated = await db.update('designations', 'id', id, data);
+        if (updated) {
+            await this.logAction('designation_updated', `Designation ${id} updated`);
         }
-        return null;
+        return updated;
     }
 
-    deleteDesignation(id) {
-        const designations = this.getDesignations();
-        const filtered = designations.filter(d => d.id !== id);
-        db.set('designations', filtered);
-        this.logAction('designation_deleted', `Designation ${id} deleted`);
-        return true;
+    async deleteDesignation(id) {
+        const result = await db.deleteRow('designations', 'id', id);
+        await this.logAction('designation_deleted', `Designation ${id} deleted`);
+        return result;
     }
 
     // Holidays CRUD
-    getHolidays(year = new Date().getFullYear()) {
-        const holidays = db.get('holidays') || [];
-        return holidays.filter(h => h.year === year);
+    async getHolidays(year = new Date().getFullYear()) {
+        return await db.getAll('holidays', { year });
     }
 
-    addHoliday(name, date, type = 'public') {
-        const holidays = db.get('holidays') || [];
+    async addHoliday(name, date, type = 'public') {
         const year = new Date(date).getFullYear();
+        const holidays = await db.getAll('holidays');
         const newHoliday = {
             id: 'HOL' + String(holidays.length + 1).padStart(3, '0'),
             name,
             date,
             type,
-            year,
-            createdAt: new Date().toISOString()
+            year
         };
-        holidays.push(newHoliday);
-        db.set('holidays', holidays);
-        this.logAction('holiday_created', `Holiday ${name} added`);
-        return newHoliday;
+        const inserted = await db.insert('holidays', newHoliday);
+        await this.logAction('holiday_created', `Holiday ${name} added`);
+        return inserted;
     }
 
-    deleteHoliday(id) {
-        const holidays = db.get('holidays') || [];
-        const filtered = holidays.filter(h => h.id !== id);
-        db.set('holidays', filtered);
-        this.logAction('holiday_deleted', `Holiday ${id} deleted`);
-        return true;
+    async deleteHoliday(id) {
+        const result = await db.deleteRow('holidays', 'id', id);
+        await this.logAction('holiday_deleted', `Holiday ${id} deleted`);
+        return result;
     }
 
     // Audit logging
-    logAction(action, details) {
+    async logAction(action, details) {
         const session = authService.getCurrentUser();
         if (session) {
-            authService.logAudit(action, session.userId, details);
+            await authService.logAudit(action, session.userId, details);
         }
     }
 }

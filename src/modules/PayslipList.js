@@ -1,5 +1,6 @@
-import { db } from '../core/database.js';
 import { authService } from '../core/auth.js';
+import { payrollService } from '../core/payroll.js';
+import { employeeService } from '../core/employee.js';
 
 export function renderPayslipList() {
   const container = document.createElement('div');
@@ -128,17 +129,13 @@ export function renderPayslipList() {
   return container;
 }
 
-function loadPayslips(container) {
+async function loadPayslips(container) {
   const currentUser = authService.getCurrentUser();
-  const payslips = db.get('payslips') || [];
+  const payslips = await payrollService.getPayslips(currentUser.userId);
 
-  // Filter payslips for current user (check both employeeId and userId)
-  const userPayslips = payslips.filter(p =>
-    p.employeeId === currentUser.employeeId ||
-    p.userId === currentUser.userId
-  )
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .slice(0, 12); // Last 12 months
+  const userPayslips = (payslips || [])
+    .sort((a, b) => new Date(b.processedOn || b.date) - new Date(a.processedOn || a.date))
+    .slice(0, 12);
 
   const tbody = container.querySelector('#payslip-table-body');
 
@@ -154,13 +151,14 @@ function loadPayslips(container) {
   }
 
   tbody.innerHTML = userPayslips.map(payslip => {
-    const grossPay = payslip.grossPay || (payslip.earnings || []).reduce((sum, e) => sum + e.amount, 0);
-    const totalDeductions = payslip.totalDeductions || (payslip.deductions || []).reduce((sum, d) => sum + d.amount, 0);
-    const netPay = payslip.netPay || (grossPay - totalDeductions);
+    const grossPay = payslip.grossEarnings || payslip.grossPay || 0;
+    const totalDeductions = payslip.totalDeductions || 0;
+    const netPay = payslip.netSalary || payslip.netPay || (grossPay - totalDeductions);
+    const monthName = typeof payslip.month === 'number' ? new Date(2000, payslip.month - 1).toLocaleString('default', { month: 'long' }) : payslip.month;
 
     return `
       <tr>
-        <td style="font-weight: 500;">${payslip.month} ${payslip.year}</td>
+        <td style="font-weight: 500;">${monthName} ${payslip.year}</td>
         <td>₹${grossPay.toLocaleString()}</td>
         <td style="color: var(--danger);">₹${totalDeductions.toLocaleString()}</td>
         <td style="color: var(--success); font-weight: 600;">₹${netPay.toLocaleString()}</td>
@@ -184,9 +182,8 @@ function loadPayslips(container) {
 }
 
 // Global handler to view/download payslip as PDF
-window.viewPayslipFromList = function (payslipId) {
-  const payslips = db.get('payslips') || [];
-  const payslip = payslips.find(p => p.id === payslipId);
+window.viewPayslipFromList = async function (payslipId) {
+  const payslip = await payrollService.getPayslip(payslipId);
 
   if (!payslip) {
     alert('Payslip not found. Please try again.');
@@ -194,8 +191,7 @@ window.viewPayslipFromList = function (payslipId) {
   }
 
   const currentUser = authService.getCurrentUser();
-  const users = db.get('users') || [];
-  const employee = users.find(u => u.id === payslip.userId) || {};
+  const employee = await employeeService.getEmployee(payslip.employeeId) || {};
 
   // Calculate values
   const grossPay = payslip.grossPay || (payslip.earnings || []).reduce((sum, e) => sum + e.amount, 0);
@@ -233,13 +229,13 @@ window.viewPayslipFromList = function (payslipId) {
         .header { 
             text-align: center; 
             padding-bottom: 20px; 
-            border-bottom: 3px solid #3b82f6; 
+            border-bottom: 3px solid #111111; 
             margin-bottom: 20px;
         }
         .company-name { 
             font-size: 28px; 
             font-weight: bold; 
-            color: #3b82f6; 
+            color: #111111; 
             margin-bottom: 5px;
         }
         .payslip-title { 
@@ -266,7 +262,7 @@ window.viewPayslipFromList = function (payslipId) {
             padding: 10px 15px;
             font-weight: bold;
             margin: 20px 0 10px;
-            border-left: 4px solid #3b82f6;
+            border-left: 4px solid #ccff00;
         }
         table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
         th, td { padding: 10px; text-align: left; border-bottom: 1px solid #e2e8f0; }
@@ -274,7 +270,7 @@ window.viewPayslipFromList = function (payslipId) {
         .amount { text-align: right; font-family: 'Courier New', monospace; }
         .total-row { background: #f8fafc; font-weight: bold; }
         .net-salary-box {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #111111;
             color: white;
             padding: 25px;
             border-radius: 8px;
@@ -305,8 +301,8 @@ window.viewPayslipFromList = function (payslipId) {
             padding-top: 10px;
         }
         .download-btn {
-            background: #3b82f6;
-            color: white;
+            background: #ccff00;
+            color: black;
             border: none;
             padding: 12px 24px;
             font-size: 16px;
@@ -314,7 +310,7 @@ window.viewPayslipFromList = function (payslipId) {
             cursor: pointer;
             margin: 20px 10px 20px 0;
         }
-        .download-btn:hover { background: #2563eb; }
+        .download-btn:hover { background: #b3e600; }
         .close-btn {
             background: #64748b;
             color: white;
@@ -339,7 +335,7 @@ window.viewPayslipFromList = function (payslipId) {
 
     <div class="container">
         <div class="header">
-            <div class="company-name">Erayaa HRMS</div>
+            <div class="company-name">Subix HRMS</div>
             <div style="color: #666; font-size: 12px;">Human Resource Management System</div>
             <div class="payslip-title">Salary Slip for ${payslip.month} ${payslip.year}</div>
         </div>
@@ -435,7 +431,7 @@ window.viewPayslipFromList = function (payslipId) {
             </div>
             <div class="signature-box">
                 <div class="signature-line">Authorized Signatory</div>
-                <div style="font-size: 11px; color: #666;">For Erayaa HRMS Company</div>
+                <div style="font-size: 11px; color: #666;">For Subix HRMS Company</div>
             </div>
         </div>
 
@@ -443,7 +439,7 @@ window.viewPayslipFromList = function (payslipId) {
             <p><strong>Note:</strong> This is a system-generated payslip and does not require a physical signature.</p>
             <p style="margin-top: 10px;">Generated on: ${new Date().toLocaleString()} | Payslip ID: ${payslip.id}</p>
             <p style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e2e8f0;">
-                <strong>Erayaa HRMS</strong> - Complete Transparency in HR Management
+                <strong>Subix HRMS</strong> - Complete Transparency in HR Management
             </p>
         </div>
     </div>

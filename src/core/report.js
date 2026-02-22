@@ -1,117 +1,150 @@
 import { db } from '../core/database.js';
-import { employeeService } from './employee.js';
-import { biometricService } from './biometric.js';
-import { leaveService } from './leave.js';
-import { payrollService } from './payroll.js';
+import { employeeService } from '../core/employee.js';
+import { biometricService } from '../core/biometric.js';
+import { leaveService } from '../core/leave.js';
+import { payrollService } from '../core/payroll.js';
 
+// HR Analytics & Reporting Service (Supabase-backed)
 class ReportService {
-    // 1. Headcount Analytics
-    getHeadcountStats() {
-        const employees = employeeService.getEmployees();
-        const stats = {
-            total: employees.length,
-            active: employees.filter(e => e.status === 'active').length,
-            exited: employees.filter(e => e.status === 'exited').length,
-            byDepartment: {},
-            byDesignation: {}
-        };
+    constructor() { }
 
-        employees.forEach(emp => {
-            if (emp.status === 'active') {
-                stats.byDepartment[emp.department] = (stats.byDepartment[emp.department] || 0) + 1;
-                stats.byDesignation[emp.designation] = (stats.byDesignation[emp.designation] || 0) + 1;
-            }
+    // Headcount report
+    async getHeadcountReport() {
+        const employees = await employeeService.getEmployees();
+        const activeEmployees = employees.filter(e => e.status === 'active');
+
+        // Department distribution
+        const deptDistribution = {};
+        activeEmployees.forEach(emp => {
+            const dept = emp.department || 'Unassigned';
+            deptDistribution[dept] = (deptDistribution[dept] || 0) + 1;
         });
 
-        return stats;
+        // Gender distribution
+        const genderDistribution = {};
+        activeEmployees.forEach(emp => {
+            const gender = emp.gender || 'Not Specified';
+            genderDistribution[gender] = (genderDistribution[gender] || 0) + 1;
+        });
+
+        // New joinees (last 30 days)
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const newJoinees = activeEmployees.filter(emp =>
+            emp.joiningDate && new Date(emp.joiningDate) > thirtyDaysAgo
+        ).length;
+
+        // Exits (last 30 days)
+        const exitedRecentlyList = employees.filter(emp =>
+            emp.status === 'exited' && emp.exitDate && new Date(emp.exitDate) > thirtyDaysAgo
+        );
+
+        return {
+            totalActive: activeEmployees.length,
+            totalExited: employees.filter(e => e.status === 'exited').length,
+            totalDraft: employees.filter(e => e.status === 'draft').length,
+            noticePeriod: employees.filter(e => e.status === 'notice_period').length,
+            newJoinees,
+            exitedRecently: exitedRecentlyList.length,
+            departmentDistribution: deptDistribution,
+            genderDistribution,
+            attritionRate: employees.length > 0
+                ? Math.round((exitedRecentlyList.length / employees.length) * 100)
+                : 0
+        };
     }
 
-    // 2. Attendance Trends (Last 7 Days)
-    getAttendanceTrends() {
-        const trends = [];
-        const now = new Date();
+    // Attendance report
+    async getAttendanceReport(month, year) {
+        const employees = await employeeService.getEmployees({ status: 'active' });
+        const report = {
+            employees: [],
+            summary: {
+                avgPresent: 0,
+                avgAbsent: 0,
+                avgLate: 0,
+                avgWorkingHours: 0,
+                mostLateEmployee: null,
+                bestAttendanceEmployee: null
+            }
+        };
 
-        for (let i = 6; i >= 0; i--) {
-            const date = new Date(now);
-            date.setDate(date.getDate() - i);
-            const dateStr = date.toISOString().split('T')[0];
+        let totalPresent = 0;
+        let totalAbsent = 0;
+        let totalLate = 0;
+        let totalWorkingHours = 0;
+        let maxLate = 0;
+        let maxPresent = 0;
 
-            const records = biometricService.getAttendance({ startDate: dateStr, endDate: dateStr });
-            const activeEmps = employeeService.getEmployees({ status: 'active' }).length;
+        for (const emp of employees) {
+            const attendance = await biometricService.getAttendanceSummary(emp.id, month, year);
+            const empReport = {
+                employeeId: emp.id,
+                employeeName: emp.name,
+                department: emp.department,
+                ...attendance
+            };
 
-            trends.push({
-                date: dateStr,
-                label: date.toLocaleDateString('en-US', { weekday: 'short' }),
-                present: records.filter(r => r.status === 'present').length,
-                absent: activeEmps - records.filter(r => r.status === 'present').length,
-                late: records.filter(r => r.isLate).length
-            });
+            report.employees.push(empReport);
+
+            totalPresent += attendance.present;
+            totalAbsent += attendance.absent;
+            totalLate += attendance.late;
+            totalWorkingHours += attendance.totalWorkingHours;
+
+            if (attendance.late > maxLate) {
+                maxLate = attendance.late;
+                report.summary.mostLateEmployee = { name: emp.name, lateDays: attendance.late };
+            }
+            if (attendance.present > maxPresent) {
+                maxPresent = attendance.present;
+                report.summary.bestAttendanceEmployee = { name: emp.name, presentDays: attendance.present };
+            }
         }
-        return trends;
+
+        const empCount = employees.length || 1;
+        report.summary.avgPresent = Math.round(totalPresent / empCount);
+        report.summary.avgAbsent = Math.round(totalAbsent / empCount);
+        report.summary.avgLate = Math.round(totalLate / empCount);
+        report.summary.avgWorkingHours = Math.round(totalWorkingHours / empCount);
+
+        return report;
     }
 
-    // 3. Payroll Distribution
-    getPayrollDistribution() {
-        const employees = employeeService.getEmployees({ status: 'active' });
-        const distribution = {};
-
-        employees.forEach(emp => {
-            const dept = emp.department || 'Other';
-            const salary = emp.salaryStructure?.gross || 0;
-            distribution[dept] = (distribution[dept] || 0) + salary;
-        });
-
-        return Object.entries(distribution).map(([dept, amount]) => ({ dept, amount }));
+    // Leave report
+    async getLeaveReport(month, year) {
+        return await leaveService.getLeaveStatistics(month, year);
     }
 
-    // 4. Leave Utilization
-    getLeaveUtilization() {
-        const employees = employeeService.getEmployees({ status: 'active' });
-        const stats = {
-            cl: { assigned: 0, used: 0 },
-            pl: { assigned: 0, used: 0 },
-            sl: { assigned: 0, used: 0 }
+    // Payroll report
+    async getPayrollReport(month, year) {
+        return await payrollService.getPayrollSummary(month, year);
+    }
+
+    // Dashboard statistics
+    async getDashboardStats() {
+        const employees = await employeeService.getEmployees();
+        const activeEmployees = employees.filter(e => e.status === 'active');
+        const today = new Date().toISOString().split('T')[0];
+        const now = new Date();
+        const month = now.getMonth() + 1;
+        const year = now.getFullYear();
+
+        const todayAttendance = await biometricService.getAttendance({ startDate: today, endDate: today });
+        const leaveStats = await leaveService.getLeaveStatistics(month, year);
+
+        return {
+            totalEmployees: activeEmployees.length,
+            presentToday: todayAttendance.filter(a => a.status === 'present').length,
+            absentToday: activeEmployees.length - todayAttendance.filter(a => a.status === 'present').length,
+            onLeaveToday: todayAttendance.filter(a => a.status === 'on_leave').length,
+            pendingLeaves: leaveStats.pending,
+            newJoinees: employees.filter(emp => {
+                if (!emp.joiningDate) return false;
+                const joinDate = new Date(emp.joiningDate);
+                return (now - joinDate) / (1000 * 60 * 60 * 24) <= 30;
+            }).length
         };
-
-        employees.forEach(emp => {
-            if (emp.leavePolicy) {
-                Object.keys(stats).forEach(type => {
-                    if (emp.leavePolicy[type]) {
-                        stats[type].assigned += (emp.leavePolicy[type].entitlement || 0);
-                        stats[type].used += (emp.leavePolicy[type].used || 0);
-                    }
-                });
-            }
-        });
-
-        return stats;
-    }
-
-    // 5. Gender Diversity (if gender field exists, else mock/skip)
-    getDiversityStats() {
-        const employees = employeeService.getEmployees({ status: 'active' });
-        const stats = {
-            male: employees.filter(e => e.gender === 'Male').length,
-            female: employees.filter(e => e.gender === 'Female').length,
-            other: employees.filter(e => e.gender === 'Other').length
-        };
-        return stats;
-    }
-
-    // Export Data Helper
-    exportToCSV(data, filename) {
-        if (data.length === 0) return;
-
-        const headers = Object.keys(data[0]);
-        const rows = data.map(obj => headers.map(header => `"${obj[header]}"`).join(','));
-        const csvContent = [headers.join(','), ...rows].join('\n');
-
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
     }
 }
 

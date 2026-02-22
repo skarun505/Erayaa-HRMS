@@ -1,10 +1,16 @@
 import { companyService } from '../core/company.js';
 
 export function renderCompanySettings() {
-    const container = document.createElement('div');
-    const company = companyService.getCompany();
+  const container = document.createElement('div');
+  container.innerHTML = '<div class="text-muted text-center py-8">Loading settings...</div>';
+  loadCompanySettings(container);
+  return container;
+}
 
-    container.innerHTML = `
+async function loadCompanySettings(container) {
+  const company = await companyService.getCompany();
+
+  container.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Company Settings</h1>
       <p class="page-subtitle">Manage company configuration and basic details</p>
@@ -96,47 +102,45 @@ export function renderCompanySettings() {
     </div>
   `;
 
-    // Handle company form submission
-    const companyForm = container.querySelector('#company-form');
-    companyForm.addEventListener('submit', (e) => {
-        e.preventDefault();
+  // Handle company form submission
+  const companyForm = container.querySelector('#company-form');
+  companyForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
 
-        const data = {
-            name: container.querySelector('#companyName').value,
-            industry: container.querySelector('#industry').value,
-            address: container.querySelector('#address').value
-        };
+    const data = {
+      name: container.querySelector('#companyName').value,
+      industry: container.querySelector('#industry').value,
+      address: container.querySelector('#address').value
+    };
 
-        companyService.updateCompany(data);
-        showSuccessMessage(container);
-    });
+    await companyService.updateCompany(data);
+    showSuccessMessage(container);
+  });
 
-    // Handle config form submission
-    const configForm = container.querySelector('#config-form');
-    configForm.addEventListener('submit', (e) => {
-        e.preventDefault();
+  // Handle config form submission
+  const configForm = container.querySelector('#config-form');
+  configForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
 
-        const data = {
-            timezone: container.querySelector('#timezone').value,
-            workingDays: container.querySelector('#workingDays').value,
-            payrollCycle: container.querySelector('#payrollCycle').value,
-            settings: {
-                workStartTime: container.querySelector('#workStartTime').value,
-                workEndTime: container.querySelector('#workEndTime').value
-            }
-        };
+    const data = {
+      timezone: container.querySelector('#timezone').value,
+      workingDays: container.querySelector('#workingDays').value,
+      payrollCycle: container.querySelector('#payrollCycle').value,
+      settings: {
+        workStartTime: container.querySelector('#workStartTime').value,
+        workEndTime: container.querySelector('#workEndTime').value
+      }
+    };
 
-        companyService.updateCompany(data);
-        showSuccessMessage(container);
-    });
-
-    return container;
+    await companyService.updateCompany(data);
+    showSuccessMessage(container);
+  });
 }
 
 function showSuccessMessage(container) {
-    const msg = container.querySelector('#success-message');
-    msg.style.display = 'block';
-    setTimeout(() => {
-        msg.style.display = 'none';
-    }, 3000);
+  const msg = container.querySelector('#success-message');
+  msg.style.display = 'block';
+  setTimeout(() => {
+    msg.style.display = 'none';
+  }, 3000);
 }

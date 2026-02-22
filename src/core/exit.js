@@ -3,203 +3,264 @@ import { authService } from '../core/auth.js';
 import { employeeService } from '../core/employee.js';
 import { leaveService } from '../core/leave.js';
 import { payrollService } from '../core/payroll.js';
+import { notificationService } from '../core/notification.js';
 
-// Exit Management & FnF Service
+// Employee Exit Process Service (Supabase-backed)
 class ExitService {
-    constructor() {
-        this.initializeExitSettings();
+    constructor() { }
+
+    // Initialize (seeds handled by SQL migration)
+    async initializeExitModule() { }
+
+    // Get exit reasons
+    async getExitReasons() {
+        return await db.getAll('exit_reasons');
     }
 
-    initializeExitSettings() {
-        if (!db.get('exit_reasons')) {
-            db.set('exit_reasons', [
-                'Resignation - Better Opportunity',
-                'Resignation - Personal Reasons',
-                'Resignation - Higher Studies',
-                'Termination - Performance',
-                'Termination - Policy Violation',
-                'Retirement',
-                'Absconding'
-            ]);
-        }
-
-        if (!db.get('clearance_checkpoints')) {
-            db.set('clearance_checkpoints', [
-                { id: 'it', department: 'IT', items: ['Laptop/Assets Returned', 'Email Access Revoked', 'Software Licenses'] },
-                { id: 'admin', department: 'Admin', items: ['ID Card Returned', 'Access Keys/Tokens', 'Storage Keys'] },
-                { id: 'finance', department: 'Finance', items: ['No Pending Loans', 'Expense Reimbursements Cleared', 'Travel Advances'] },
-                { id: 'library', department: 'Library', items: ['Books/Resource Cards'] }
-            ]);
-        }
+    // Get clearance checkpoints
+    async getClearanceCheckpoints() {
+        return await db.getAll('clearance_checkpoints');
     }
 
-    // --- Resignation Flow ---
+    // Submit resignation
+    async initiateExit(data) {
+        const employee = await employeeService.getEmployee(data.employeeId);
+        if (!employee) return { success: false, message: 'Employee not found' };
 
-    submitResignation(employeeId, data) {
-        const exits = db.get('employee_exits') || [];
+        // Check for existing active exit request
+        const existingExits = await db.getAll('employee_exits', { employee_id: data.employeeId });
+        const activeExit = existingExits.find(e => ['pending_approval', 'approved', 'in_clearance'].includes(e.status));
+        if (activeExit) return { success: false, message: 'An active exit request already exists' };
 
-        // Check if already resigned
-        const existing = exits.find(e => e.employeeId === employeeId && e.status !== 'cancelled' && e.status !== 'completed');
-        if (existing) return { success: false, message: 'An active resignation already exists for this employee.' };
+        const noticePeriod = employee.noticePeriod || 30;
+        const lwdDate = new Date();
+        lwdDate.setDate(lwdDate.getDate() + noticePeriod);
 
-        const employee = employeeService.getEmployee(employeeId);
-        if (!employee) return { success: false, message: 'Employee not found.' };
+        const clearanceCheckpoints = await this.getClearanceCheckpoints();
+        const clearance = {};
+        clearanceCheckpoints.forEach(cp => {
+            clearance[cp.id] = {
+                department: cp.department,
+                items: cp.items.map(item => ({ name: item, cleared: false, clearedBy: null, clearedOn: null })),
+                completed: false
+            };
+        });
 
-        // Calculate Last Working Day (LWD) based on notice period
-        const noticePeriodDays = employee.noticePeriod || 30;
-        const resignationDate = new Date();
-        const lwd = new Date(resignationDate);
-        lwd.setDate(lwd.getDate() + noticePeriodDays);
-
+        const exits = await db.getAll('employee_exits');
         const newExit = {
-            id: 'EXIT' + Date.now(),
-            employeeId,
-            employeeName: employee.name,
-            resignationDate: resignationDate.toISOString(),
-            requestedLWD: data.requestedLWD || lwd.toISOString().split('T')[0],
+            id: 'EXIT' + String(exits.length + 1).padStart(4, '0'),
+            employee_id: data.employeeId,
+            employee_name: employee.name,
+            resignation_date: new Date().toISOString(),
+            requested_lwd: data.requestedLWD || lwdDate.toISOString().split('T')[0],
             reason: data.reason,
-            personalEmail: data.personalEmail || '',
-            status: 'pending_approval', // pending_approval, approved (clearance starts), rejected, cancelled, completed
-            clearance: this.initializeClearance(),
+            personal_email: data.personalEmail,
+            status: 'pending_approval',
+            clearance: clearance,
             fnf: null,
             comments: data.comments || ''
         };
 
-        exits.push(newExit);
-        db.set('employee_exits', exits);
-        this.logAction('resignation_submitted', employeeId, `Requested LWD: ${newExit.requestedLWD}`);
-        return { success: true, exit: newExit };
+        await db.insert('employee_exits', newExit);
+        await notificationService.broadcast('Employee Resignation', `${employee.name} has submitted their resignation.`, 'warning');
+
+        await this.logAction('exit_initiated', `Exit initiated for ${employee.name}`);
+        return { success: true, exit: this._mapToLegacy(newExit) };
     }
 
-    initializeClearance() {
-        const checkpoints = db.get('clearance_checkpoints');
-        const clearance = {};
-        checkpoints.forEach(cp => {
-            clearance[cp.id] = {
-                department: cp.department,
-                status: 'pending', // pending, cleared
-                items: cp.items.map(name => ({ name, status: 'pending' })),
-                clearedBy: null,
-                clearedAt: null,
-                comments: ''
-            };
+    // Approve resignation
+    async approveExit(exitId, approverId, comments = '') {
+        const row = await db.getOne('employee_exits', 'id', exitId);
+        if (!row) return { success: false, message: 'Exit request not found' };
+
+        await db.update('employee_exits', 'id', exitId, {
+            status: 'approved',
+            approver_comments: comments,
+            approval_date: new Date().toISOString()
         });
-        return clearance;
+
+        // Move employee to notice period
+        await employeeService.updateStatus(row.employee_id, 'notice_period', new Date().toISOString().split('T')[0], 'Resignation approved');
+
+        await notificationService.notify(row.employee_id, 'Resignation Approved', 'Your resignation has been approved. Clearance process will begin.', 'info');
+        await this.logAction('exit_approved', `Exit approved for ${row.employee_name}`);
+
+        const updated = await db.getOne('employee_exits', 'id', exitId);
+        return { success: true, exit: this._mapToLegacy(updated) };
     }
 
-    getExitProcess(employeeId) {
-        const exits = db.get('employee_exits') || [];
-        return exits.find(e => e.employeeId === employeeId && e.status !== 'cancelled');
+    // Reject resignation
+    async rejectExit(exitId, approverId, reason) {
+        const row = await db.getOne('employee_exits', 'id', exitId);
+        if (!row) return { success: false, message: 'Exit request not found' };
+
+        await db.update('employee_exits', 'id', exitId, {
+            status: 'rejected',
+            approver_comments: reason,
+            approval_date: new Date().toISOString()
+        });
+
+        await notificationService.notify(row.employee_id, 'Resignation Rejected', `Your resignation request has been rejected. Reason: ${reason}`, 'info');
+        await this.logAction('exit_rejected', `Exit rejected for ${row.employee_name}`);
+
+        const updated = await db.getOne('employee_exits', 'id', exitId);
+        return { success: true, exit: this._mapToLegacy(updated) };
     }
 
-    getAllExitProcesses() {
-        return db.get('employee_exits') || [];
-    }
+    // Update clearance
+    async updateClearance(exitId, department, itemIndex, cleared, clearedBy) {
+        const row = await db.getOne('employee_exits', 'id', exitId);
+        if (!row) return { success: false, message: 'Exit request not found' };
 
-    updateExitStatus(exitId, status, approverComments = '') {
-        const exits = db.get('employee_exits') || [];
-        const index = exits.findIndex(e => e.id === exitId);
-        if (index === -1) return { success: false, message: 'Exit process not found.' };
+        const clearance = row.clearance || {};
+        if (!clearance[department]) return { success: false, message: 'Department not found in clearance' };
 
-        exits[index].status = status;
-        if (approverComments) exits[index].approverComments = approverComments;
+        clearance[department].items[itemIndex].cleared = cleared;
+        clearance[department].items[itemIndex].clearedBy = clearedBy;
+        clearance[department].items[itemIndex].clearedOn = new Date().toISOString();
 
-        if (status === 'approved') {
-            exits[index].approvalDate = new Date().toISOString();
+        clearance[department].completed = clearance[department].items.every(item => item.cleared);
+
+        // Check if all departments are cleared
+        const allCleared = Object.values(clearance).every(dept => dept.completed);
+        const status = allCleared ? 'in_fnf' : row.status;
+
+        await db.update('employee_exits', 'id', exitId, { clearance, status });
+
+        if (allCleared) {
+            await notificationService.notify(row.employee_id, 'Clearance Complete ✅', 'All clearance departments have been completed. F&F processing will begin.', 'success');
         }
 
-        db.set('employee_exits', exits);
         return { success: true };
     }
 
-    // --- Clearance Management ---
+    // Calculate F&F settlement
+    async calculateFnF(exitId) {
+        const row = await db.getOne('employee_exits', 'id', exitId);
+        if (!row) return { success: false, message: 'Exit request not found' };
 
-    updateClearanceItem(exitId, deptId, itemIndex, status, clearedBy) {
-        const exits = db.get('employee_exits') || [];
-        const index = exits.findIndex(e => e.id === exitId);
-        if (index === -1) return;
+        const employee = await employeeService.getEmployee(row.employee_id);
+        if (!employee) return { success: false, message: 'Employee not found' };
 
-        exits[index].clearance[deptId].items[itemIndex].status = status;
+        const salary = employee.salaryStructure || { gross: employee.monthlyCTC || 0, basic: 0, hra: 0 };
+        const leaveBalance = await leaveService.getLeaveBalance(row.employee_id);
 
-        // Check if all items in dept are cleared
-        const allCleared = exits[index].clearance[deptId].items.every(i => i.status === 'cleared');
-        if (allCleared) {
-            exits[index].clearance[deptId].status = 'cleared';
-            exits[index].clearance[deptId].clearedBy = clearedBy;
-            exits[index].clearance[deptId].clearedAt = new Date().toISOString();
-        } else {
-            exits[index].clearance[deptId].status = 'pending';
-        }
+        const perDaySalary = salary.gross / 30;
+        const lastWorkingDay = row.requested_lwd ? new Date(row.requested_lwd) : new Date();
+        const currentDate = new Date();
+        const daysWorked = Math.ceil((currentDate - new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)) / (1000 * 60 * 60 * 24));
 
-        db.set('employee_exits', exits);
-    }
+        const earnedSalary = Math.round(perDaySalary * daysWorked);
+        const leaveEncashment = leaveBalance?.pl?.remaining
+            ? Math.round(leaveBalance.pl.remaining * perDaySalary)
+            : 0;
+        const gratuity = this.calculateGratuity(employee);
+        const bonus = 0;
 
-    // --- FnF Calculation ---
+        const pfDeduction = salary.pf || Math.round(salary.basic * 0.12) || 0;
+        const taxDeduction = 0;
+        const noticePayRecovery = 0;
+        const otherDeductions = 0;
 
-    calculateFnF(exitId) {
-        const exits = db.get('employee_exits') || [];
-        const index = exits.findIndex(e => e.id === exitId);
-        if (index === -1) return null;
+        const totalEarnings = earnedSalary + leaveEncashment + gratuity + bonus;
+        const totalDeductions = pfDeduction + taxDeduction + noticePayRecovery + otherDeductions;
+        const netPayable = totalEarnings - totalDeductions;
 
-        const exit = exits[index];
-        const employee = employeeService.getEmployee(exit.employeeId);
-        if (!employee) return null;
-
-        // 1. Current Month Salary (Pro-rated)
-        const lwd = new Date(exit.requestedLWD);
-        const daysWorkedThisMonth = lwd.getDate();
-        const monthlyGross = employee.salaryStructure?.gross || 0;
-        const unpaidSalary = Math.round((monthlyGross / 30) * daysWorkedThisMonth);
-
-        // 2. Leave Encashment (Simplified: PL Balance * per day salary)
-        const balance = leaveService.getLeaveBalance(employee.id);
-        const plBalance = balance?.pl?.remaining || 0;
-        const basic = employee.salaryStructure?.basic || 0;
-        const perDayBasic = basic / 30;
-        const leaveEncashment = Math.round(plBalance * perDayBasic);
-
-        // 3. Deductions
-        const recoveryNotice = 0; // Notice period buyous etc.
-        const pendingLoans = 0;
-
-        const totalEarnings = unpaidSalary + leaveEncashment;
-        const totalDeductions = recoveryNotice + pendingLoans;
-        const netFnF = totalEarnings - totalDeductions;
-
-        const fnfData = {
-            unpaidSalary,
-            leaveEncashment,
+        const fnf = {
+            earnings: {
+                earnedSalary,
+                leaveEncashment,
+                gratuity,
+                bonus
+            },
+            deductions: {
+                pf: pfDeduction,
+                tax: taxDeduction,
+                noticePayRecovery,
+                otherDeductions
+            },
             totalEarnings,
             totalDeductions,
-            netFnF,
-            calculatedAt: new Date().toISOString()
+            netPayable,
+            calculatedOn: new Date().toISOString()
         };
 
-        exits[index].fnf = fnfData;
-        db.set('employee_exits', exits);
-        return fnfData;
+        await db.update('employee_exits', 'id', exitId, { fnf, status: 'in_fnf' });
+        return { success: true, fnf };
     }
 
-    completeExit(exitId) {
-        const exits = db.get('employee_exits') || [];
-        const index = exits.findIndex(e => e.id === exitId);
-        if (index === -1) return { success: false };
+    // Calculate gratuity
+    calculateGratuity(employee) {
+        const joiningDate = new Date(employee.joiningDate);
+        const yearsOfService = (new Date() - joiningDate) / (1000 * 60 * 60 * 24 * 365.25);
 
-        const exit = exits[index];
+        if (yearsOfService < 5) return 0;
 
-        // Update employee status to 'exited'
-        employeeService.updateEmployee(exit.employeeId, { status: 'exited' });
-
-        exits[index].status = 'completed';
-        exits[index].completedAt = new Date().toISOString();
-        db.set('employee_exits', exits);
-
-        this.logAction('exit_completed', exit.employeeId, `Full and Final payment processed.`);
-        return { success: true };
+        const lastDrawnSalary = employee.salaryStructure?.basic || 0;
+        return Math.round((lastDrawnSalary * 15 * Math.floor(yearsOfService)) / 26);
     }
 
-    logAction(action, userId, details) {
-        authService.logAudit(action, userId, details);
+    // Complete exit
+    async completeExit(exitId) {
+        const row = await db.getOne('employee_exits', 'id', exitId);
+        if (!row) return { success: false, message: 'Exit request not found' };
+
+        await db.update('employee_exits', 'id', exitId, {
+            status: 'completed',
+            completed_at: new Date().toISOString()
+        });
+
+        // Mark employee as exited
+        await employeeService.updateStatus(row.employee_id, 'exited', new Date().toISOString().split('T')[0], 'Exit completed');
+
+        await this.logAction('exit_completed', `Exit completed for ${row.employee_name}`);
+
+        const updated = await db.getOne('employee_exits', 'id', exitId);
+        return { success: true, exit: this._mapToLegacy(updated) };
+    }
+
+    // Get all exit records
+    async getExits(filters = {}) {
+        const dbFilters = {};
+        if (filters.employeeId) dbFilters.employee_id = filters.employeeId;
+        if (filters.status) dbFilters.status = filters.status;
+
+        const rows = await db.getAll('employee_exits', dbFilters);
+        return rows.map(r => this._mapToLegacy(r));
+    }
+
+    // Get single exit
+    async getExit(exitId) {
+        const row = await db.getOne('employee_exits', 'id', exitId);
+        return row ? this._mapToLegacy(row) : null;
+    }
+
+    // Log actions
+    async logAction(action, details) {
+        const session = authService.getCurrentUser();
+        if (session) {
+            await authService.logAudit(action, session.userId, details);
+        }
+    }
+
+    _mapToLegacy(r) {
+        if (!r) return null;
+        return {
+            id: r.id,
+            employeeId: r.employee_id,
+            employeeName: r.employee_name,
+            resignationDate: r.resignation_date,
+            requestedLWD: r.requested_lwd,
+            reason: r.reason,
+            personalEmail: r.personal_email,
+            status: r.status,
+            clearance: r.clearance,
+            fnf: r.fnf,
+            comments: r.comments,
+            approverComments: r.approver_comments,
+            approvalDate: r.approval_date,
+            completedAt: r.completed_at
+        };
     }
 }
 

@@ -1,10 +1,11 @@
 import { companyService } from '../core/company.js';
 
 export function renderHolidays() {
-    const container = document.createElement('div');
-    const currentYear = new Date().getFullYear();
+  const container = document.createElement('div');
+  container.id = 'holidays-container';
+  const currentYear = new Date().getFullYear();
 
-    container.innerHTML = `
+  container.innerHTML = `
     <div class="page-header flex justify-between items-center">
       <div>
         <h1 class="page-title">Holiday Calendar</h1>
@@ -59,61 +60,70 @@ export function renderHolidays() {
     </div>
   `;
 
-    // Render holidays list
-    renderHolidaysList(container, currentYear);
+  // Render holidays list
+  renderHolidaysList(container, currentYear);
 
-    // Year filter handler
+  // Refresh handler
+  const refreshHolidays = () => {
+    if (!document.body.contains(container)) return;
     const yearSelect = container.querySelector('#year-select');
-    yearSelect.addEventListener('change', (e) => {
-        renderHolidaysList(container, parseInt(e.target.value));
-    });
+    if (yearSelect) {
+      renderHolidaysList(container, parseInt(yearSelect.value));
+    }
+  };
+  window.addEventListener('holiday-updated', refreshHolidays);
 
-    // Modal handlers
-    const modal = container.querySelector('#holiday-modal');
-    const addBtn = container.querySelector('#add-holiday-btn');
-    const cancelBtn = container.querySelector('#cancel-holiday');
-    const form = container.querySelector('#holiday-form');
+  // Year filter handler
+  const yearSelect = container.querySelector('#year-select');
+  yearSelect.addEventListener('change', (e) => {
+    renderHolidaysList(container, parseInt(e.target.value));
+  });
 
-    addBtn.addEventListener('click', () => {
-        modal.style.display = 'block';
-    });
+  // Modal handlers
+  const modal = container.querySelector('#holiday-modal');
+  const addBtn = container.querySelector('#add-holiday-btn');
+  const cancelBtn = container.querySelector('#cancel-holiday');
+  const form = container.querySelector('#holiday-form');
 
-    cancelBtn.addEventListener('click', () => {
-        modal.style.display = 'none';
-        form.reset();
-    });
+  addBtn.addEventListener('click', () => {
+    modal.style.display = 'block';
+  });
 
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const name = container.querySelector('#holiday-name').value;
-        const date = container.querySelector('#holiday-date').value;
-        const type = container.querySelector('#holiday-type').value;
+  cancelBtn.addEventListener('click', () => {
+    modal.style.display = 'none';
+    form.reset();
+  });
 
-        companyService.addHoliday(name, date, type);
-        modal.style.display = 'none';
-        form.reset();
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = container.querySelector('#holiday-name').value;
+    const date = container.querySelector('#holiday-date').value;
+    const type = container.querySelector('#holiday-type').value;
 
-        const year = new Date(date).getFullYear();
-        renderHolidaysList(container, year);
-    });
+    await companyService.addHoliday(name, date, type);
+    modal.style.display = 'none';
+    form.reset();
 
-    return container;
+    window.dispatchEvent(new Event('holiday-updated'));
+  });
+
+  return container;
 }
 
-function renderHolidaysList(container, year) {
-    const holidays = companyService.getHolidays(year);
-    const listContainer = container.querySelector('#holidays-list');
+async function renderHolidaysList(container, year) {
+  const holidays = await companyService.getHolidays(year);
+  const listContainer = container.querySelector('#holidays-list');
 
-    if (holidays.length === 0) {
-        listContainer.innerHTML = '<p class="text-muted text-center p-4">No holidays configured for this year</p>';
-        return;
-    }
+  if (holidays.length === 0) {
+    listContainer.innerHTML = '<p class="text-muted text-center p-4">No holidays configured for this year</p>';
+    return;
+  }
 
-    // Sort by date
-    holidays.sort((a, b) => new Date(a.date) - new Date(b.date));
+  // Sort by date
+  holidays.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    const table = document.createElement('table');
-    table.innerHTML = `
+  const table = document.createElement('table');
+  table.innerHTML = `
     <thead>
       <tr>
         <th>Date</th>
@@ -125,10 +135,10 @@ function renderHolidaysList(container, year) {
     </thead>
     <tbody>
       ${holidays.map(holiday => {
-        const date = new Date(holiday.date);
-        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const date = new Date(holiday.date);
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-        return `
+    return `
           <tr>
             <td class="font-medium">${date.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}</td>
             <td>${dayNames[date.getDay()]}</td>
@@ -139,29 +149,29 @@ function renderHolidaysList(container, year) {
             </td>
           </tr>
         `;
-    }).join('')}
+  }).join('')}
     </tbody>
   `;
 
-    listContainer.innerHTML = '';
-    listContainer.appendChild(table);
+  listContainer.innerHTML = '';
+  listContainer.appendChild(table);
 
-    // Add summary
-    const summary = document.createElement('div');
-    summary.className = 'mt-4 p-3';
-    summary.style.background = 'var(--bg-secondary)';
-    summary.style.borderRadius = '6px';
-    summary.innerHTML = `
+  // Add summary
+  const summary = document.createElement('div');
+  summary.className = 'mt-4 p-3';
+  summary.style.background = 'var(--bg-secondary)';
+  summary.style.borderRadius = '6px';
+  summary.innerHTML = `
     <div class="flex justify-between text-sm">
       <span class="font-medium">Total Holidays:</span>
       <span class="font-bold">${holidays.length} days</span>
     </div>
   `;
-    listContainer.appendChild(summary);
+  listContainer.appendChild(summary);
 }
 
 // Global delete function
-window.deleteHoliday = (id) => {
-    companyService.deleteHoliday(id);
-    location.reload();
+window.deleteHoliday = async (id) => {
+  await companyService.deleteHoliday(id);
+  window.dispatchEvent(new Event('holiday-updated'));
 };

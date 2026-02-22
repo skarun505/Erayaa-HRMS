@@ -1,369 +1,278 @@
 import { db } from '../core/database.js';
 import { authService } from '../core/auth.js';
-import { leaveService } from '../core/leave.js';
 import { employeeService } from '../core/employee.js';
+import { leaveService } from '../core/leave.js';
 import { notificationService } from '../core/notification.js';
 
-// Approval Service - Centralized approval management
+// Approval Workflow Service (Supabase-backed)
 class ApprovalService {
-    constructor() {
-        this.initializeApprovals();
-    }
+    constructor() { }
 
-    // Initialize approval settings
-    initializeApprovals() {
-        if (!db.get('approval_settings')) {
-            db.set('approval_settings', {
-                leaveApprovalLevels: 1, // Number of approval levels
-                autoApproveThreshold: 0, // Auto-approve leaves <= this many days (0 = disabled)
-                escalationEnabled: true,
-                escalationDays: 3, // Escalate if not approved in X days
-                allowDelegation: true
-            });
-        }
-    }
+    // Initialize (seeds handled by SQL migration)
+    async initializeApprovalSettings() { }
 
-    // Get all pending approvals for a specific approver (manager/HR)
-    getPendingApprovals(approverId) {
-        const approver = employeeService.getEmployee(approverId);
-        if (!approver) return [];
-
-        const approvals = [];
-
-        // Get leave approvals
-        const leaveApprovals = this.getLeaveApprovals(approverId, approver.role);
-        approvals.push(...leaveApprovals);
-
-        // Get attendance correction approvals (if any)
-        const attendanceApprovals = this.getAttendanceApprovals(approverId);
-        approvals.push(...attendanceApprovals);
-
-        // Sort by date (newest first)
-        approvals.sort((a, b) => new Date(b.requestedOn) - new Date(a.requestedOn));
-
-        return approvals;
-    }
-
-    // Get leave approvals for manager/HR
-    getLeaveApprovals(approverId, role) {
-        const approvals = [];
-        let leaveRequests = [];
-
-        if (role === 'hr_admin' || role === 'super_admin') {
-            // HR/Admin sees all pending requests
-            leaveRequests = leaveService.getLeaveRequests({ status: 'pending' });
-        } else if (role === 'manager') {
-            // Managers see requests from their reportees
-            const reportees = this.getReportees(approverId);
-            leaveRequests = leaveService.getLeaveRequests({ status: 'pending' });
-            leaveRequests = leaveRequests.filter(req =>
-                reportees.some(r => r.id === req.employeeId)
-            );
-        }
-
-        leaveRequests.forEach(req => {
-            const employee = employeeService.getEmployee(req.employeeId);
-            approvals.push({
-                id: req.id,
-                type: 'leave',
-                title: `Leave Request - ${req.leaveType}`,
-                employee: employee ? employee.name : 'Unknown',
-                employeeId: req.employeeId,
-                requestedOn: req.appliedOn,
-                details: {
-                    leaveType: req.leaveType,
-                    startDate: req.startDate,
-                    endDate: req.endDate,
-                    days: req.days,
-                    isHalfDay: req.isHalfDay,
-                    reason: req.reason,
-                    salaryImpact: req.salaryImpact
-                },
-                priority: this.calculatePriority(req),
-                urgency: this.getUrgency(req.startDate),
-                data: req
-            });
-        });
-
-        return approvals;
-    }
-
-    // Get attendance correction approvals
-    getAttendanceApprovals(approverId) {
-        const approvals = [];
-        const corrections = db.get('attendance_corrections') || [];
-        const pendingCorrections = corrections.filter(c => c.status === 'pending');
-
-        pendingCorrections.forEach(correction => {
-            const employee = employeeService.getEmployee(correction.employeeId);
-            approvals.push({
-                id: correction.id,
-                type: 'attendance_correction',
-                title: 'Attendance Correction Request',
-                employee: employee ? employee.name : 'Unknown',
-                employeeId: correction.employeeId,
-                requestedOn: correction.requestedOn,
-                details: {
-                    date: correction.date,
-                    currentInTime: correction.currentInTime,
-                    currentOutTime: correction.currentOutTime,
-                    requestedInTime: correction.requestedInTime,
-                    requestedOutTime: correction.requestedOutTime,
-                    reason: correction.reason
-                },
-                priority: 'medium',
-                urgency: 'normal',
-                data: correction
-            });
-        });
-
-        return approvals;
-    }
-
-    // Get reportees for a manager
-    getReportees(managerId) {
-        const allEmployees = employeeService.getEmployees({ status: 'active' });
-        return allEmployees.filter(emp => emp.managerId === managerId);
-    }
-
-    // Calculate priority based on various factors
-    calculatePriority(request) {
-        // High priority: >3 days or starting soon
-        const daysRequested = request.days || 0;
-        const daysUntilStart = this.getDaysUntilStart(request.startDate);
-
-        if (daysRequested > 5 || daysUntilStart <= 2) {
-            return 'high';
-        } else if (daysRequested > 2 || daysUntilStart <= 5) {
-            return 'medium';
-        }
-        return 'low';
-    }
-
-    // Get urgency based on start date
-    getUrgency(startDate) {
-        const days = this.getDaysUntilStart(startDate);
-
-        if (days <= 1) return 'urgent';
-        if (days <= 3) return 'high';
-        if (days <= 7) return 'normal';
-        return 'low';
-    }
-
-    // Calculate days until start
-    getDaysUntilStart(startDate) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
-        const diffTime = start - today;
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays;
-    }
-
-    // Approve a request
-    approveRequest(approvalId, approverId, comments = '') {
-        const approvals = this.getPendingApprovals(approverId);
-        const approval = approvals.find(a => a.id === approvalId);
-
-        if (!approval) {
-            return { success: false, message: 'Approval request not found' };
-        }
-
-        if (approval.type === 'leave') {
-            return leaveService.approveLeave(approvalId, approverId, comments);
-        } else if (approval.type === 'attendance_correction') {
-            return this.approveAttendanceCorrection(approvalId, approverId, comments);
-        }
-
-        return { success: false, message: 'Unknown approval type' };
-    }
-
-    // Reject a request
-    rejectRequest(approvalId, approverId, reason = '') {
-        const approvals = this.getPendingApprovals(approverId);
-        const approval = approvals.find(a => a.id === approvalId);
-
-        if (!approval) {
-            return { success: false, message: 'Approval request not found' };
-        }
-
-        if (approval.type === 'leave') {
-            return leaveService.rejectLeave(approvalId, approverId, reason);
-        } else if (approval.type === 'attendance_correction') {
-            return this.rejectAttendanceCorrection(approvalId, approverId, reason);
-        }
-
-        return { success: false, message: 'Unknown approval type' };
-    }
-
-    // Approve attendance correction
-    approveAttendanceCorrection(correctionId, approverId, comments) {
-        const corrections = db.get('attendance_corrections') || [];
-        const index = corrections.findIndex(c => c.id === correctionId);
-
-        if (index === -1) {
-            return { success: false, message: 'Correction request not found' };
-        }
-
-        const approver = employeeService.getEmployee(approverId);
-        corrections[index].status = 'approved';
-        corrections[index].approvedBy = approver?.name || approverId;
-        corrections[index].approvedOn = new Date().toISOString();
-        corrections[index].approverComments = comments;
-
-        // Apply the correction to attendance
-        const attendance = db.get('attendance') || {};
-        const key = `${corrections[index].employeeId}_${corrections[index].date}`;
-
-        if (attendance[key]) {
-            attendance[key].inTime = corrections[index].requestedInTime;
-            attendance[key].outTime = corrections[index].requestedOutTime;
-            attendance[key].corrected = true;
-            attendance[key].correctionId = correctionId;
-            db.set('attendance', attendance);
-        }
-
-        db.set('attendance_corrections', corrections);
-        this.logAction('attendance_correction_approved', approverId, `Approved correction ${correctionId}`);
-
-        // Notify Employee
-        notificationService.notify(corrections[index].employeeId, 'Attendance Corrected ✅', `Your attendance correction for ${corrections[index].date} has been approved.`, 'success');
-
-        return { success: true, message: 'Attendance correction approved' };
-    }
-
-    // Reject attendance correction
-    rejectAttendanceCorrection(correctionId, approverId, reason) {
-        const corrections = db.get('attendance_corrections') || [];
-        const index = corrections.findIndex(c => c.id === correctionId);
-
-        if (index === -1) {
-            return { success: false, message: 'Correction request not found' };
-        }
-
-        const approver = employeeService.getEmployee(approverId);
-        corrections[index].status = 'rejected';
-        corrections[index].rejectedBy = approver?.name || approverId;
-        corrections[index].rejectedOn = new Date().toISOString();
-        corrections[index].rejectionReason = reason;
-
-        db.set('attendance_corrections', corrections);
-        this.logAction('attendance_correction_rejected', approverId, `Rejected correction ${correctionId}`);
-
-        return { success: true, message: 'Attendance correction rejected' };
-    }
-
-    // Submit attendance correction request
-    submitAttendanceCorrection(employeeId, date, requestedInTime, requestedOutTime, reason) {
-        const corrections = db.get('attendance_corrections') || [];
-        const attendance = db.get('attendance') || {};
-        const key = `${employeeId}_${date}`;
-        const currentRecord = attendance[key];
-
-        const correctionId = 'CORR' + Date.now();
-
-        const correction = {
-            id: correctionId,
-            employeeId,
-            date,
-            currentInTime: currentRecord?.inTime || null,
-            currentOutTime: currentRecord?.outTime || null,
-            requestedInTime,
-            requestedOutTime,
-            reason,
-            status: 'pending',
-            requestedOn: new Date().toISOString()
-        };
-
-        corrections.push(correction);
-        db.set('attendance_corrections', corrections);
-
-        this.logAction('attendance_correction_submitted', employeeId, `Correction request for ${date}`);
-
-        // Notify Admins
-        const admins = employeeService.getEmployees({ role: 'hr_admin' });
-        admins.forEach(admin => {
-            notificationService.notify(admin.id, 'New Correction Request', `Attendance correction requested for ${date}.`, 'warning');
-        });
-
-        return { success: true, correctionId };
-    }
-
-    // Get approval statistics
-    getApprovalStatistics(approverId) {
-        const approvals = this.getPendingApprovals(approverId);
-
+    // Get approval settings
+    async getApprovalSettings() {
+        const rows = await db.getAll('approval_settings');
+        if (rows.length === 0) return {};
+        const r = rows[0];
         return {
-            total: approvals.length,
-            byType: {
-                leave: approvals.filter(a => a.type === 'leave').length,
-                attendance: approvals.filter(a => a.type === 'attendance_correction').length
-            },
-            byUrgency: {
-                urgent: approvals.filter(a => a.urgency === 'urgent').length,
-                high: approvals.filter(a => a.urgency === 'high').length,
-                normal: approvals.filter(a => a.urgency === 'normal').length,
-                low: approvals.filter(a => a.urgency === 'low').length
-            },
-            byPriority: {
-                high: approvals.filter(a => a.priority === 'high').length,
-                medium: approvals.filter(a => a.priority === 'medium').length,
-                low: approvals.filter(a => a.priority === 'low').length
-            }
+            leaveApprovalLevels: r.leave_approval_levels,
+            autoApproveThreshold: r.auto_approve_threshold,
+            escalationEnabled: r.escalation_enabled,
+            escalationDays: r.escalation_days,
+            allowDelegation: r.allow_delegation
         };
+    }
+
+    // Update approval settings
+    async updateApprovalSettings(settings) {
+        const rows = await db.getAll('approval_settings');
+        if (rows.length > 0) {
+            const updates = {};
+            if (settings.leaveApprovalLevels !== undefined) updates.leave_approval_levels = settings.leaveApprovalLevels;
+            if (settings.autoApproveThreshold !== undefined) updates.auto_approve_threshold = settings.autoApproveThreshold;
+            if (settings.escalationEnabled !== undefined) updates.escalation_enabled = settings.escalationEnabled;
+            if (settings.escalationDays !== undefined) updates.escalation_days = settings.escalationDays;
+            if (settings.allowDelegation !== undefined) updates.allow_delegation = settings.allowDelegation;
+
+            await db.update('approval_settings', 'id', rows[0].id, updates);
+        }
+    }
+
+    // Get pending approvals for a user
+    async getPendingApprovals(userId, type = null) {
+        const results = [];
+        const employees = await employeeService.getEmployees();
+        const currentUser = employees.find(e => e.id === userId);
+
+        if (!currentUser) return results;
+
+        // Find team members (those who report to this user)
+        const teamMemberIds = employees
+            .filter(e => e.manager === currentUser.name || e.managerId === userId)
+            .map(e => e.id);
+
+        // Include HR admin access - they can see all
+        const isHR = currentUser.role === 'hr_admin' || currentUser.role === 'super_admin';
+
+        // 1. Leave Requests
+        if (!type || type === 'leave') {
+            const leaveRequests = await leaveService.getLeaveRequests({ status: 'pending' });
+
+            for (const req of leaveRequests) {
+                if (isHR || teamMemberIds.includes(req.employeeId)) {
+                    results.push({
+                        id: req.id,
+                        type: 'leave',
+                        title: `${req.leaveType} Leave Request`,
+                        description: `${req.employeeName} requested ${req.days} days (${req.startDate} to ${req.endDate})`,
+                        requestedBy: req.employeeName,
+                        requestedById: req.employeeId,
+                        requestedOn: req.appliedOn,
+                        status: 'pending',
+                        data: req
+                    });
+                }
+            }
+        }
+
+        // 2. Attendance Corrections
+        if (!type || type === 'attendance_correction') {
+            const corrections = await db.getAll('attendance_corrections', { status: 'pending' });
+
+            for (const corr of corrections) {
+                if (isHR || teamMemberIds.includes(corr.employee_id)) {
+                    results.push({
+                        id: corr.id,
+                        type: 'attendance_correction',
+                        title: 'Attendance Correction',
+                        description: `Correction for ${corr.date}`,
+                        requestedById: corr.employee_id,
+                        requestedOn: corr.requested_on,
+                        status: 'pending',
+                        data: this._mapCorrectionToLegacy(corr)
+                    });
+                }
+            }
+        }
+
+        return results;
     }
 
     // Get approval history
-    getApprovalHistory(approverId, limit = 50) {
-        const history = [];
+    async getApprovalHistory(userId, limit = 50) {
+        const results = [];
+        const employees = await employeeService.getEmployees();
+        const currentUser = employees.find(e => e.id === userId);
+        if (!currentUser) return results;
 
-        // Get approved/rejected leaves
-        const allLeaves = leaveService.getLeaveRequests({ limit: 1000 });
-        const processedLeaves = allLeaves.filter(l =>
-            (l.status === 'approved' || l.status === 'rejected') &&
-            (l.approvedBy === approverId || l.rejectedBy === approverId)
-        );
+        const isHR = currentUser.role === 'hr_admin' || currentUser.role === 'super_admin';
+        const teamMemberIds = employees
+            .filter(e => e.manager === currentUser.name || e.managerId === userId)
+            .map(e => e.id);
 
-        processedLeaves.forEach(leave => {
-            const employee = employeeService.getEmployee(leave.employeeId);
-            history.push({
-                id: leave.id,
-                type: 'leave',
-                action: leave.status,
-                employee: employee?.name || 'Unknown',
-                date: leave.status === 'approved' ? leave.approvedOn : leave.rejectedOn,
-                details: `${leave.leaveType} - ${leave.days} day(s)`
-            });
+        // Leave history
+        const allLeaves = await leaveService.getLeaveRequests({});
+        const processedLeaves = allLeaves.filter(r => r.status !== 'pending');
+
+        for (const req of processedLeaves) {
+            if (isHR || teamMemberIds.includes(req.employeeId)) {
+                results.push({
+                    id: req.id,
+                    type: 'leave',
+                    title: `${req.leaveType} Leave`,
+                    description: `${req.employeeName} - ${req.days} days - ${req.status}`,
+                    requestedBy: req.employeeName,
+                    status: req.status,
+                    processedOn: req.approvedOn,
+                    processedBy: req.approvedBy,
+                    data: req
+                });
+            }
+        }
+
+        // Attendance correction history
+        const allCorrections = await db.getAll('attendance_corrections');
+        const processedCorrections = allCorrections.filter(c => c.status !== 'pending');
+
+        for (const corr of processedCorrections) {
+            if (isHR || teamMemberIds.includes(corr.employee_id)) {
+                results.push({
+                    id: corr.id,
+                    type: 'attendance_correction',
+                    title: 'Attendance Correction',
+                    description: `Correction for ${corr.date} - ${corr.status}`,
+                    requestedById: corr.employee_id,
+                    status: corr.status,
+                    processedOn: corr.approved_on || corr.rejected_on,
+                    data: this._mapCorrectionToLegacy(corr)
+                });
+            }
+        }
+
+        return results
+            .sort((a, b) => new Date(b.processedOn) - new Date(a.processedOn))
+            .slice(0, limit);
+    }
+
+    // Approve an item
+    async approve(itemId, itemType, approverId, comments = '') {
+        if (itemType === 'leave') {
+            return await leaveService.approveLeave(itemId, approverId);
+        } else if (itemType === 'attendance_correction') {
+            return await this.approveAttendanceCorrection(itemId, approverId, comments);
+        }
+        return { success: false, message: 'Unknown approval type' };
+    }
+
+    // Reject an item
+    async reject(itemId, itemType, approverId, reason = '') {
+        if (itemType === 'leave') {
+            return await leaveService.rejectLeave(itemId, approverId, reason);
+        } else if (itemType === 'attendance_correction') {
+            return await this.rejectAttendanceCorrection(itemId, approverId, reason);
+        }
+        return { success: false, message: 'Unknown approval type' };
+    }
+
+    // ---- Attendance Corrections ----
+
+    async submitAttendanceCorrection(correctionData) {
+        const corrections = await db.getAll('attendance_corrections');
+        const newCorrection = {
+            id: 'CORR' + String(corrections.length + 1).padStart(4, '0'),
+            employee_id: correctionData.employeeId,
+            date: correctionData.date,
+            current_in_time: correctionData.currentInTime,
+            current_out_time: correctionData.currentOutTime,
+            requested_in_time: correctionData.requestedInTime,
+            requested_out_time: correctionData.requestedOutTime,
+            reason: correctionData.reason,
+            status: 'pending'
+        };
+
+        await db.insert('attendance_corrections', newCorrection);
+        await this.logAction('correction_submitted', `Attendance correction for ${correctionData.date}`);
+
+        return { success: true, correction: this._mapCorrectionToLegacy(newCorrection) };
+    }
+
+    async approveAttendanceCorrection(correctionId, approverId, comments = '') {
+        const row = await db.getOne('attendance_corrections', 'id', correctionId);
+        if (!row) return { success: false, message: 'Correction not found' };
+
+        const approver = await employeeService.getEmployee(approverId);
+        await db.update('attendance_corrections', 'id', correctionId, {
+            status: 'approved',
+            approved_by: approver?.name || approverId,
+            approved_on: new Date().toISOString(),
+            approver_comments: comments
         });
 
-        // Get processed attendance corrections
-        const corrections = db.get('attendance_corrections') || [];
-        const processedCorrections = corrections.filter(c =>
-            (c.status === 'approved' || c.status === 'rejected')
-        );
+        // Auto-correct the attendance record
+        await db.upsert('attendance', {
+            employee_id: row.employee_id,
+            date: row.date,
+            in_time: row.requested_in_time,
+            out_time: row.requested_out_time,
+            corrected: true,
+            correction_id: correctionId,
+            status: 'present'
+        }, { onConflict: 'employee_id,date' });
 
-        processedCorrections.forEach(corr => {
-            const employee = employeeService.getEmployee(corr.employeeId);
-            history.push({
-                id: corr.id,
-                type: 'attendance_correction',
-                action: corr.status,
-                employee: employee?.name || 'Unknown',
-                date: corr.status === 'approved' ? corr.approvedOn : corr.rejectedOn,
-                details: `Attendance for ${corr.date}`
-            });
+        await notificationService.notify(row.employee_id, 'Correction Approved ✅', `Your attendance correction for ${row.date} has been approved.`, 'success');
+        await this.logAction('correction_approved', `Attendance correction ${correctionId} approved`);
+
+        return { success: true };
+    }
+
+    async rejectAttendanceCorrection(correctionId, approverId, reason = '') {
+        const row = await db.getOne('attendance_corrections', 'id', correctionId);
+        if (!row) return { success: false, message: 'Correction not found' };
+
+        const approver = await employeeService.getEmployee(approverId);
+        await db.update('attendance_corrections', 'id', correctionId, {
+            status: 'rejected',
+            rejected_by: approver?.name || approverId,
+            rejected_on: new Date().toISOString(),
+            rejection_reason: reason
         });
 
-        // Sort by date descending
-        history.sort((a, b) => new Date(b.date) - new Date(a.date));
+        await notificationService.notify(row.employee_id, 'Correction Rejected ❌', `Your attendance correction for ${row.date} was rejected. Reason: ${reason}`, 'warning');
+        await this.logAction('correction_rejected', `Attendance correction ${correctionId} rejected`);
 
-        return history.slice(0, limit);
+        return { success: true };
     }
 
     // Log actions
-    logAction(action, userId, details) {
-        authService.logAudit(action, userId, details);
+    async logAction(action, details) {
+        const session = authService.getCurrentUser();
+        if (session) {
+            await authService.logAudit(action, session.userId, details);
+        }
+    }
+
+    _mapCorrectionToLegacy(r) {
+        if (!r) return null;
+        return {
+            id: r.id,
+            employeeId: r.employee_id,
+            date: r.date,
+            currentInTime: r.current_in_time,
+            currentOutTime: r.current_out_time,
+            requestedInTime: r.requested_in_time,
+            requestedOutTime: r.requested_out_time,
+            reason: r.reason,
+            status: r.status,
+            requestedOn: r.requested_on,
+            approvedBy: r.approved_by,
+            approvedOn: r.approved_on,
+            approverComments: r.approver_comments,
+            rejectedBy: r.rejected_by,
+            rejectedOn: r.rejected_on,
+            rejectionReason: r.rejection_reason
+        };
     }
 }
 

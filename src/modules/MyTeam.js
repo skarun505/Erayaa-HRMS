@@ -1,82 +1,78 @@
-import { db } from '../core/database.js';
 import { authService } from '../core/auth.js';
 
 export function renderMyTeam() {
-    const container = document.createElement('div');
-    const currentUser = authService.getCurrentUser();
+  const container = document.createElement('div');
+  const currentUser = authService.getCurrentUser();
 
-    // Get team members (employees under this manager)
-    const users = db.get('users') || [];
+  // Sample team data for manager
+  const teamMembers = [
+    {
+      id: 'TM001',
+      name: 'Rajesh Kumar',
+      employeeId: 'E005',
+      designation: 'Senior Developer',
+      department: 'Engineering',
+      email: 'rajesh.kumar@company.com',
+      phone: '+91 98765 43211',
+      joiningDate: '2022-03-15',
+      status: 'present',
+      avatar: 'R'
+    },
+    {
+      id: 'TM002',
+      name: 'Priya Sharma',
+      employeeId: 'E006',
+      designation: 'Software Developer',
+      department: 'Engineering',
+      email: 'priya.sharma@company.com',
+      phone: '+91 98765 43212',
+      joiningDate: '2022-06-20',
+      status: 'present',
+      avatar: 'P'
+    },
+    {
+      id: 'TM003',
+      name: 'Amit Patel',
+      employeeId: 'E007',
+      designation: 'Junior Developer',
+      department: 'Engineering',
+      email: 'amit.patel@company.com',
+      phone: '+91 98765 43213',
+      joiningDate: '2023-01-10',
+      status: 'on_leave',
+      avatar: 'A'
+    },
+    {
+      id: 'TM004',
+      name: 'Sneha Reddy',
+      employeeId: 'E008',
+      designation: 'QA Engineer',
+      department: 'Engineering',
+      email: 'sneha.reddy@company.com',
+      phone: '+91 98765 43214',
+      joiningDate: '2022-09-05',
+      status: 'present',
+      avatar: 'S'
+    },
+    {
+      id: 'TM005',
+      name: 'Vikram Singh',
+      employeeId: 'E009',
+      designation: 'UI Developer',
+      department: 'Engineering',
+      email: 'vikram.singh@company.com',
+      phone: '+91 98765 43215',
+      joiningDate: '2023-04-18',
+      status: 'wfh',
+      avatar: 'V'
+    }
+  ];
 
-    // Sample team data for manager
-    const teamMembers = [
-        {
-            id: 'TM001',
-            name: 'Rajesh Kumar',
-            employeeId: 'E005',
-            designation: 'Senior Developer',
-            department: 'Engineering',
-            email: 'rajesh.kumar@company.com',
-            phone: '+91 98765 43211',
-            joiningDate: '2022-03-15',
-            status: 'present',
-            avatar: 'R'
-        },
-        {
-            id: 'TM002',
-            name: 'Priya Sharma',
-            employeeId: 'E006',
-            designation: 'Software Developer',
-            department: 'Engineering',
-            email: 'priya.sharma@company.com',
-            phone: '+91 98765 43212',
-            joiningDate: '2022-06-20',
-            status: 'present',
-            avatar: 'P'
-        },
-        {
-            id: 'TM003',
-            name: 'Amit Patel',
-            employeeId: 'E007',
-            designation: 'Junior Developer',
-            department: 'Engineering',
-            email: 'amit.patel@company.com',
-            phone: '+91 98765 43213',
-            joiningDate: '2023-01-10',
-            status: 'on_leave',
-            avatar: 'A'
-        },
-        {
-            id: 'TM004',
-            name: 'Sneha Reddy',
-            employeeId: 'E008',
-            designation: 'QA Engineer',
-            department: 'Engineering',
-            email: 'sneha.reddy@company.com',
-            phone: '+91 98765 43214',
-            joiningDate: '2022-09-05',
-            status: 'present',
-            avatar: 'S'
-        },
-        {
-            id: 'TM005',
-            name: 'Vikram Singh',
-            employeeId: 'E009',
-            designation: 'UI Developer',
-            department: 'Engineering',
-            email: 'vikram.singh@company.com',
-            phone: '+91 98765 43215',
-            joiningDate: '2023-04-18',
-            status: 'wfh',
-            avatar: 'V'
-        }
-    ];
+  const presentCount = teamMembers.filter(m => m.status === 'present').length;
+  const onLeaveCount = teamMembers.filter(m => m.status === 'on_leave').length;
+  const wfhCount = teamMembers.filter(m => m.status === 'wfh').length;
 
-    const presentCount = teamMembers.filter(m => m.status === 'present').length;
-    const onLeaveCount = teamMembers.filter(m => m.status === 'on_leave').length;
-    const wfhCount = teamMembers.filter(m => m.status === 'wfh').length;
-
-    container.innerHTML = `
+  container.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">My Team</h1>
       <p class="page-subtitle">View and manage your team members</p>
@@ -207,14 +203,14 @@ export function renderMyTeam() {
     </div>
   `;
 
-    return container;
+  return container;
 }
 
 // Global handlers
 window.viewTeamMember = function (memberId) {
-    alert(`Viewing profile for team member ${memberId}\n\nThis would open the detailed employee profile in a production system.`);
+  alert(`Viewing profile for team member ${memberId}\n\nThis would open the detailed employee profile in a production system.`);
 };
 
 window.messageTeamMember = function (memberId) {
-    alert(`Opening message composer for team member ${memberId}\n\nThis would open the internal messaging system in a production system.`);
+  alert(`Opening message composer for team member ${memberId}\n\nThis would open the internal messaging system in a production system.`);
 };

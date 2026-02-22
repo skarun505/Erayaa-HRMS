@@ -4,34 +4,46 @@ import { authService } from '../core/auth.js';
 
 export function renderPayrollDashboard() {
   const container = document.createElement('div');
-  const currentUser = authService.getCurrentUser();
-  const isHROrAdmin = currentUser && (currentUser.role === 'hr_admin' || currentUser.role === 'super_admin');
-  const isEmployee = currentUser && currentUser.role === 'employee';
+  container.id = 'payroll-dashboard-container';
 
-  const now = new Date();
-  const currentMonth = now.getMonth() + 1;
-  const currentYear = now.getFullYear();
+  const loadContent = async () => {
+    const currentUser = authService.getCurrentUser();
+    const isHROrAdmin = currentUser && (currentUser.role === 'hr_admin' || currentUser.role === 'super_admin');
+    const isEmployee = currentUser && currentUser.role === 'employee';
 
-  container.innerHTML = `
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+
+    container.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Payroll Management</h1>
       <p class="page-subtitle">Transparent salary processing and payslip generation</p>
     </div>
 
-    ${isHROrAdmin ? renderHRView(currentMonth, currentYear) : ''}
-    ${isEmployee ? renderEmployeeView(currentUser.userId, currentMonth, currentYear) : ''}
+    ${isHROrAdmin ? await renderHRView(currentMonth, currentYear) : ''}
+    ${isEmployee ? await renderEmployeeView(currentUser.userId, currentMonth, currentYear) : ''}
   `;
 
-  // Add event listeners
-  if (isHROrAdmin) {
-    setupHRListeners(container);
-  }
+    // Add event listeners
+    if (isHROrAdmin) {
+      setupHRListeners(container);
+    }
+  };
+
+  loadContent();
+
+  window.addEventListener('payroll-updated', () => {
+    if (document.body.contains(container)) {
+      loadContent();
+    }
+  });
 
   return container;
 }
 
-function renderHRView(month, year) {
-  const summary = payrollService.getPayrollSummary(month, year);
+async function renderHRView(month, year) {
+  const summary = await payrollService.getPayrollSummary(month, year);
 
   return `
     <!-- Process Payroll Section -->
@@ -123,8 +135,8 @@ function renderHRView(month, year) {
   `;
 }
 
-function renderEmployeeView(employeeId, month, year) {
-  const payslips = payrollService.getPayslips({ employeeId });
+async function renderEmployeeView(employeeId, month, year) {
+  const payslips = await payrollService.getPayslips({ employeeId });
   const currentPayslip = payslips.find(p => p.month === month && p.year === year);
 
   return `
@@ -284,7 +296,7 @@ function renderPayslipDetail(payslip) {
       </div>
 
       <!-- Net Salary -->
-      <div class="mt-6 p-4" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white;">
+      <div class="mt-6 p-4" style="background: var(--surface); border: 1px solid var(--primary-lime); border-radius: 8px; color: var(--text-main); box-shadow: 0 0 15px rgba(204, 255, 0, 0.1);">
         <div class="flex justify-between items-center">
           <div>
             <div class="text-sm opacity-90">Net Salary (Take Home)</div>
@@ -324,7 +336,7 @@ function setupHRListeners(container) {
           const failed = results.filter(r => !r.success).length;
 
           alert(`Payroll processed!\n\nSuccessful: ${successful}\nFailed: ${failed}`);
-          location.reload();
+          window.dispatchEvent(new Event('payroll-updated'));
         } catch (error) {
           alert('Error processing payroll: ' + error.message);
         } finally {
@@ -339,7 +351,7 @@ function setupHRListeners(container) {
   loadPayslipsList(container);
 }
 
-function loadPayslipsList(container) {
+async function loadPayslipsList(container) {
   const listContainer = container.querySelector('#payslips-list');
   if (!listContainer) return;
 
@@ -350,7 +362,7 @@ function loadPayslipsList(container) {
   const filters = { month, year };
   if (statusFilter) filters.status = statusFilter;
 
-  const payslips = payrollService.getPayslips(filters);
+  const payslips = await payrollService.getPayslips(filters);
 
   if (payslips.length === 0) {
     listContainer.innerHTML = '<p class="text-muted text-center p-8">No payslips found. Click "Process Payroll" to generate.</p>';
@@ -432,23 +444,23 @@ function getMonthName(month) {
 }
 
 // Global action handlers
-window.approvePayslip = (id) => {
+window.approvePayslip = async (id) => {
   if (confirm('Approve this payslip?')) {
     const currentUser = authService.getCurrentUser();
-    const result = payrollService.approvePayslip(id, currentUser.userId);
+    const result = await payrollService.approvePayslip(id, currentUser.userId);
     if (result.success) {
       alert('Payslip approved!');
-      location.reload();
+      window.dispatchEvent(new Event('payroll-updated'));
     }
   }
 };
 
-window.markAsPaid = (id) => {
+window.markAsPaid = async (id) => {
   if (confirm('Mark this payslip as paid?')) {
-    const result = payrollService.markAsPaid(id);
+    const result = await payrollService.markAsPaid(id);
     if (result.success) {
       alert('Payslip marked as paid!');
-      location.reload();
+      window.dispatchEvent(new Event('payroll-updated'));
     }
   }
 };

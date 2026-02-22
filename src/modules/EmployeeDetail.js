@@ -2,16 +2,19 @@ import { employeeService } from '../core/employee.js';
 import { authService } from '../core/auth.js';
 
 export function renderEmployeeDetail(employeeId) {
-    const employee = employeeService.getEmployee(employeeId);
+  const container = document.createElement('div');
+  container.id = 'employee-detail-container';
+
+  const loadContent = async () => {
+    const employee = await employeeService.getEmployee(employeeId);
     const currentUser = authService.getCurrentUser();
     const isHROrAdmin = currentUser && (currentUser.role === 'hr_admin' || currentUser.role === 'super_admin');
     const isSelf = currentUser && currentUser.userId === employeeId;
 
     if (!employee) {
-        return renderNotFound();
+      container.innerHTML = renderNotFound().innerHTML;
+      return;
     }
-
-    const container = document.createElement('div');
 
     container.innerHTML = `
     <div class="page-header flex justify-between items-center">
@@ -152,14 +155,23 @@ export function renderEmployeeDetail(employeeId) {
 
     // Event handlers for HR actions
     if (isHROrAdmin) {
-        setupHRActions(container, employee);
+      setupHRActions(container, employee);
     }
+  };
 
-    return container;
+  loadContent();
+
+  window.addEventListener('employee-updated', () => {
+    if (document.body.contains(container)) {
+      loadContent();
+    }
+  });
+
+  return container;
 }
 
 function renderField(label, value, isHTML = false) {
-    return `
+  return `
     <div>
       <div class="text-xs text-muted mb-1">${label}</div>
       <div class="font-medium">${isHTML ? value : escapeHtml(value)}</div>
@@ -168,7 +180,7 @@ function renderField(label, value, isHTML = false) {
 }
 
 function renderSalaryItem(label, amount, isBold = false, color = null) {
-    return `
+  return `
     <div class="flex justify-between items-center mb-2">
       <span class="text-sm ${isBold ? 'font-bold' : ''}">${label}</span>
       <span class="font-medium ${isBold ? 'font-bold text-lg' : ''}" style="${color ? `color: var(--${color})` : ''}">₹${amount.toLocaleString()}</span>
@@ -177,8 +189,8 @@ function renderSalaryItem(label, amount, isBold = false, color = null) {
 }
 
 function renderLeaveCard(title, leave) {
-    const percentage = (leave.remaining / leave.total) * 100;
-    return `
+  const percentage = (leave.remaining / leave.total) * 100;
+  return `
     <div>
       <div class="flex justify-between mb-2">
         <span class="font-medium">${title}</span>
@@ -193,58 +205,58 @@ function renderLeaveCard(title, leave) {
 }
 
 function getStatusBadge(status) {
-    const badges = {
-        draft: '<span class="badge badge-warning">Draft</span>',
-        active: '<span class="badge badge-success">Active</span>',
-        notice_period: '<span class="badge badge-warning">Notice Period</span>',
-        exited: '<span class="badge badge-danger">Exited</span>'
-    };
-    return badges[status] || status;
+  const badges = {
+    draft: '<span class="badge badge-warning">Draft</span>',
+    active: '<span class="badge badge-success">Active</span>',
+    notice_period: '<span class="badge badge-warning">Notice Period</span>',
+    exited: '<span class="badge badge-danger">Exited</span>'
+  };
+  return badges[status] || status;
 }
 
 function formatRole(role) {
-    return role.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  return role.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
 function setupHRActions(container, employee) {
-    // Assign salary button
-    const assignSalaryBtns = container.querySelectorAll('#assign-salary-btn, #assign-salary-btn-2');
-    assignSalaryBtns.forEach(btn => {
-        btn?.addEventListener('click', () => showAssignSalaryModal(employee));
-    });
+  // Assign salary button
+  const assignSalaryBtns = container.querySelectorAll('#assign-salary-btn, #assign-salary-btn-2');
+  assignSalaryBtns.forEach(btn => {
+    btn?.addEventListener('click', () => showAssignSalaryModal(employee));
+  });
 
-    // Assign leave button
-    const assignLeaveBtns = container.querySelectorAll('#assign-leave-btn, #assign-leave-btn-2');
-    assignLeaveBtns.forEach(btn => {
-        btn?.addEventListener('click', () => showAssignLeaveModal(employee));
-    });
+  // Assign leave button
+  const assignLeaveBtns = container.querySelectorAll('#assign-leave-btn, #assign-leave-btn-2');
+  assignLeaveBtns.forEach(btn => {
+    btn?.addEventListener('click', () => showAssignLeaveModal(employee));
+  });
 
-    // Activate button
-    const activateBtn = container.querySelector('#activate-btn');
-    activateBtn?.addEventListener('click', () => {
-        if (!employee.salaryStructure || !employee.leavePolicy) {
-            alert('Please assign salary structure and leave policy before activating.');
-            return;
-        }
+  // Activate button
+  const activateBtn = container.querySelector('#activate-btn');
+  activateBtn?.addEventListener('click', async () => {
+    if (!employee.salaryStructure || !employee.leavePolicy) {
+      alert('Please assign salary structure and leave policy before activating.');
+      return;
+    }
 
-        if (confirm(`Activate ${employee.name}?\n\nThis will:\n- Set status to Active\n- Enable system access\n- Start leave accrual`)) {
-            try {
-                employeeService.updateStatus(employee.id, 'active', new Date().toISOString().split('T')[0], 'Activated by HR');
-                alert('Employee activated successfully!');
-                location.reload();
-            } catch (error) {
-                alert('Error: ' + error.message);
-            }
-        }
-    });
+    if (confirm(`Activate ${employee.name}?\n\nThis will:\n- Set status to Active\n- Enable system access\n- Start leave accrual`)) {
+      try {
+        await employeeService.updateStatus(employee.id, 'active', new Date().toISOString().split('T')[0], 'Activated by HR');
+        alert('Employee activated successfully!');
+        window.dispatchEvent(new Event('employee-updated'));
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    }
+  });
 }
 
-function showAssignSalaryModal(employee) {
-    const templates = employeeService.getSalaryTemplates();
-    const modal = document.createElement('div');
-    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); padding: 2rem; overflow-y: auto; z-index: 1000; display: flex; align-items: center; justify-content: center;';
+async function showAssignSalaryModal(employee) {
+  const templates = await employeeService.getSalaryTemplates();
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); padding: 2rem; overflow-y: auto; z-index: 1000; display: flex; align-items: center; justify-content: center;';
 
-    modal.innerHTML = `
+  modal.innerHTML = `
     <div class="card" style="max-width: 500px; width: 100%;">
       <h3 class="mb-4">Assign Salary Structure</h3>
       <form id="salary-form">
@@ -268,31 +280,31 @@ function showAssignSalaryModal(employee) {
     </div>
   `;
 
-    document.body.appendChild(modal);
+  document.body.appendChild(modal);
 
-    const form = modal.querySelector('#salary-form');
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const ctc = parseInt(modal.querySelector('#ctc-input').value);
-        const templateId = modal.querySelector('#template-select').value;
+  const form = modal.querySelector('#salary-form');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const ctc = parseInt(modal.querySelector('#ctc-input').value);
+    const templateId = modal.querySelector('#template-select').value;
 
-        employeeService.assignSalaryStructure(employee.id, ctc, templateId);
-        document.body.removeChild(modal);
-        alert('Salary structure assigned successfully!');
-        location.reload();
-    });
+    await employeeService.assignSalaryStructure(employee.id, ctc, templateId);
+    document.body.removeChild(modal);
+    alert('Salary structure assigned successfully!');
+    window.dispatchEvent(new Event('employee-updated'));
+  });
 
-    modal.querySelector('#cancel-modal').addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
+  modal.querySelector('#cancel-modal').addEventListener('click', () => {
+    document.body.removeChild(modal);
+  });
 }
 
-function showAssignLeaveModal(employee) {
-    const templates = employeeService.getLeaveTemplates();
-    const modal = document.createElement('div');
-    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); padding: 2rem; overflow-y: auto; z-index: 1000; display: flex; align-items: center; justify-content: center;';
+async function showAssignLeaveModal(employee) {
+  const templates = await employeeService.getLeaveTemplates();
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); padding: 2rem; overflow-y: auto; z-index: 1000; display: flex; align-items: center; justify-content: center;';
 
-    modal.innerHTML = `
+  modal.innerHTML = `
     <div class="card" style="max-width: 500px; width: 100%;">
       <h3 class="mb-4">Assign Leave Policy</h3>
       <form id="leave-form">
@@ -315,38 +327,38 @@ function showAssignLeaveModal(employee) {
     </div>
   `;
 
-    document.body.appendChild(modal);
+  document.body.appendChild(modal);
 
-    const form = modal.querySelector('#leave-form');
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const templateId = modal.querySelector('#template-select').value;
+  const form = modal.querySelector('#leave-form');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const templateId = modal.querySelector('#template-select').value;
 
-        employeeService.assignLeavePolicy(employee.id, templateId);
-        document.body.removeChild(modal);
-        alert('Leave policy assigned successfully!');
-        location.reload();
-    });
+    await employeeService.assignLeavePolicy(employee.id, templateId);
+    document.body.removeChild(modal);
+    alert('Leave policy assigned successfully!');
+    window.dispatchEvent(new Event('employee-updated'));
+  });
 
-    modal.querySelector('#cancel-modal').addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
+  modal.querySelector('#cancel-modal').addEventListener('click', () => {
+    document.body.removeChild(modal);
+  });
 }
 
 function renderNotFound() {
-    const container = document.createElement('div');
-    container.innerHTML = `
+  const container = document.createElement('div');
+  container.innerHTML = `
     <div class="card text-center p-8">
       <h3 class="mb-2">Employee Not Found</h3>
       <p class="text-muted mb-4">The requested employee record could not be found.</p>
       <button class="btn btn-primary" onclick="history.back()">Go Back</button>
     </div>
   `;
-    return container;
+  return container;
 }
 
 function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }

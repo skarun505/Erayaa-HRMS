@@ -3,22 +3,24 @@ import { employeeService } from '../core/employee.js';
 import { authService } from '../core/auth.js';
 
 export function renderLeaveDashboard() {
-    const container = document.createElement('div');
-    const currentUser = authService.getCurrentUser();
-    const isEmployee = currentUser && currentUser.role === 'employee';
-    const isManager = currentUser && currentUser.role === 'manager';
-    const isHROrAdmin = currentUser && (currentUser.role === 'hr_admin' || currentUser.role === 'super_admin');
+  const container = document.createElement('div');
+  const currentUser = authService.getCurrentUser();
+  const isEmployee = currentUser && currentUser.role === 'employee';
+  const isManager = currentUser && currentUser.role === 'manager';
+  const isHROrAdmin = currentUser && (currentUser.role === 'hr_admin' || currentUser.role === 'super_admin');
 
-    const employeeId = isEmployee ? currentUser.userId : null;
-    const balance = employeeId ? leaveService.getLeaveBalance(employeeId) : null;
+  const employeeId = isEmployee ? currentUser.userId : null;
 
-    container.innerHTML = `
+  container.id = 'leave-dashboard-container';
+  container.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Leave Management</h1>
       <p class="page-subtitle">Apply for leaves and track your balance with complete transparency</p>
     </div>
 
-    ${balance ? renderLeaveBalance(balance) : ''}
+    <div id="leave-balance-section">
+      <div class="text-muted text-center py-4">Loading leave balance...</div>
+    </div>
 
     ${isEmployee ? `
       <div class="card mb-6">
@@ -49,7 +51,7 @@ export function renderLeaveDashboard() {
           <div class="flex gap-2">
             <select id="employee-filter" class="btn btn-secondary">
               <option value="">All Employees</option>
-              ${getEmployeeOptions()}
+              <!-- Loaded dynamically -->
             </select>
             <select id="status-filter" class="btn btn-secondary">
               <option value="">All Status</option>
@@ -65,56 +67,79 @@ export function renderLeaveDashboard() {
     </div>
   `;
 
-    // Load data
+  // Function to refresh all data
+  const refreshData = async () => {
     if (isManager || isHROrAdmin) {
-        loadPendingApprovals(container, currentUser.userId);
+      await loadPendingApprovals(container, currentUser.userId);
     }
 
-    const filters = { employeeId: isEmployee ? currentUser.userId : null };
-    loadLeaveHistory(container, filters);
+    const filters = {
+      employeeId: isEmployee ? currentUser.userId : null,
+      ...(isHROrAdmin ? {
+        employeeId: container.querySelector('#employee-filter')?.value || null,
+        status: container.querySelector('#status-filter')?.value || null
+      } : {})
+    };
+    await loadLeaveHistory(container, filters);
 
-    // Apply leave button
-    const applyBtn = container.querySelector('#apply-leave-btn');
-    if (applyBtn) {
-        applyBtn.addEventListener('click', () => showApplyLeaveModal(currentUser.userId));
+    // Refresh balance if employee
+    if (isEmployee) {
+      const newBalance = await leaveService.getLeaveBalance(currentUser.userId);
+      const balanceContainer = container.querySelector('#leave-balance-section');
+      if (newBalance && balanceContainer) {
+        balanceContainer.innerHTML = renderLeaveBalance(newBalance);
+      }
     }
+  };
 
-    // Filters for HR/Admin
-    if (isHROrAdmin) {
-        const empFilter = container.querySelector('#employee-filter');
-        const statusFilter = container.querySelector('#status-filter');
+  // Initial Load
+  refreshData();
 
-        [empFilter, statusFilter].forEach(filter => {
-            filter?.addEventListener('change', () => {
-                const filters = {
-                    employeeId: empFilter?.value || null,
-                    status: statusFilter?.value || null
-                };
-                loadLeaveHistory(container, filters);
-            });
-        });
+  // Listen for updates
+  const updateHandler = () => {
+    if (document.body.contains(container)) {
+      refreshData();
     }
+  };
+  window.addEventListener('leave-updated', updateHandler);
 
-    return container;
+  // Apply leave button
+  const applyBtn = container.querySelector('#apply-leave-btn');
+  if (applyBtn) {
+    applyBtn.addEventListener('click', () => showApplyLeaveModal(currentUser.userId));
+  }
+
+  // Filters for HR/Admin
+  if (isHROrAdmin) {
+    loadEmployeeFilterOptions(container);
+    const empFilter = container.querySelector('#employee-filter');
+    const statusFilter = container.querySelector('#status-filter');
+
+    [empFilter, statusFilter].forEach(filter => {
+      filter?.addEventListener('change', refreshData);
+    });
+  }
+
+  return container;
 }
 
 function renderLeaveBalance(balance) {
-    const leaveTypes = ['cl', 'pl', 'sl'];
-    const labels = { cl: 'Casual Leave (CL)', pl: 'Privilege Leave (PL)', sl: 'Sick Leave (SL)' };
+  const leaveTypes = ['cl', 'pl', 'sl'];
+  const labels = { cl: 'Casual Leave (CL)', pl: 'Privilege Leave (PL)', sl: 'Sick Leave (SL)' };
 
-    return `
+  return `
     <div class="card mb-6">
       <h3 class="mb-4">📊 Your Leave Balance (Complete Transparency)</h3>
       
       <div class="grid grid-3 mb-4">
         ${leaveTypes.map(type => {
-        const leave = balance[type];
-        if (!leave) return '';
+    const leave = balance[type];
+    if (!leave) return '';
 
-        const percentage = (leave.remaining / leave.total) * 100;
-        const color = percentage > 50 ? 'success' : percentage > 20 ? 'warning' : 'danger';
+    const percentage = (leave.remaining / leave.total) * 100;
+    const color = percentage > 50 ? 'success' : percentage > 20 ? 'warning' : 'danger';
 
-        return `
+    return `
             <div class="card" style="background: var(--bg-secondary);">
               <div class="flex justify-between mb-2">
                 <span class="font-semibold">${labels[type]}</span>
@@ -137,11 +162,11 @@ function renderLeaveBalance(balance) {
               </div>
             </div>
           `;
-    }).join('')}
+  }).join('')}
       </div>
 
       ${balance.carryForward ? `
-        <div class="alert" style="background: rgba(59, 130, 246, 0.1); color: var(--primary); border: 1px solid rgba(59, 130, 246, 0.2);">
+        <div class="alert" style="background: rgba(204, 255, 0, 0.1); color: var(--primary-lime); border: 1px solid var(--primary-lime);">
           <strong>✓ Carry Forward Allowed</strong><br/>
           You can carry forward up to ${balance.maxCarryForward} unused days to next year
         </div>
@@ -155,19 +180,19 @@ function renderLeaveBalance(balance) {
   `;
 }
 
-function showApplyLeaveModal(employeeId) {
-    const balance = leaveService.getLeaveBalance(employeeId);
-    const employee = employeeService.getEmployee(employeeId);
+async function showApplyLeaveModal(employeeId) {
+  const balance = await leaveService.getLeaveBalance(employeeId);
+  const employee = await employeeService.getEmployee(employeeId);
 
-    if (!balance) {
-        alert('Leave policy not assigned. Contact HR.');
-        return;
-    }
+  if (!balance) {
+    alert('Leave policy not assigned. Contact HR.');
+    return;
+  }
 
-    const modal = document.createElement('div');
-    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); padding: 2rem; overflow-y: auto; z-index: 1000; display: flex; align-items: center; justify-content: center;';
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); padding: 2rem; overflow-y: auto; z-index: 1000; display: flex; align-items: center; justify-content: center;';
 
-    modal.innerHTML = `
+  modal.innerHTML = `
     <div class="card" style="max-width: 600px; width: 100%;">
       <h3 class="mb-4">Apply for Leave</h3>
       
@@ -210,35 +235,38 @@ function showApplyLeaveModal(employeeId) {
         <div id="impact-preview" class="alert" style="display: none; background: var(--bg-secondary); border: 2px solid var(--border);"></div>
 
         <div class="flex gap-2">
-          <button type="submit" class="btn btn-primary" id="submit-btn">Submit Request</button>
+          <button type="submit" class="btn btn-primary" id="submit-btn" style="position: relative;">
+            Submit Request
+          </button>
           <button type="button" class="btn btn-secondary" id="cancel-modal">Cancel</button>
         </div>
       </form>
     </div>
   `;
 
-    document.body.appendChild(modal);
+  document.body.appendChild(modal);
 
-    const form = modal.querySelector('#leave-form');
-    const leaveTypeSelect = modal.querySelector('#leave-type');
-    const startDateInput = modal.querySelector('#start-date');
-    const endDateInput = modal.querySelector('#end-date');
-    const halfDayCheck = modal.querySelector('#half-day');
-    const impactPreview = modal.querySelector('#impact-preview');
+  const form = modal.querySelector('#leave-form');
+  const leaveTypeSelect = modal.querySelector('#leave-type');
+  const startDateInput = modal.querySelector('#start-date');
+  const endDateInput = modal.querySelector('#end-date');
+  const halfDayCheck = modal.querySelector('#half-day');
+  const impactPreview = modal.querySelector('#impact-preview');
+  const submitBtn = modal.querySelector('#submit-btn');
 
-    // Live preview of impact
-    const updatePreview = () => {
-        const leaveType = leaveTypeSelect.value;
-        const startDate = startDateInput.value;
-        const endDate = endDateInput.value;
-        const isHalfDay = halfDayCheck.checked;
+  // Live preview of impact
+  const updatePreview = async () => {
+    const leaveType = leaveTypeSelect.value;
+    const startDate = startDateInput.value;
+    const endDate = endDateInput.value;
+    const isHalfDay = halfDayCheck.checked;
 
-        if (leaveType && startDate && endDate) {
-            const days = isHalfDay ? 0.5 : leaveService.calculateLeaveDays(startDate, endDate);
-            const impact = leaveService.calculateSalaryImpact(employee, leaveType, days);
+    if (leaveType && startDate && endDate) {
+      const days = isHalfDay ? 0.5 : leaveService.calculateLeaveDays(startDate, endDate);
+      const impact = await leaveService.calculateSalaryImpact(employee, leaveType, days);
 
-            impactPreview.style.display = 'block';
-            impactPreview.innerHTML = `
+      impactPreview.style.display = 'block';
+      impactPreview.innerHTML = `
         <div class="font-semibold mb-2">📋 Leave Impact Preview:</div>
         <div class="grid grid-2 text-sm">
           <div>
@@ -262,71 +290,75 @@ function showApplyLeaveModal(employeeId) {
           </div>
         `}
       `;
-        } else {
-            impactPreview.style.display = 'none';
-        }
+    } else {
+      impactPreview.style.display = 'none';
+    }
+  };
+
+  leaveTypeSelect.addEventListener('change', updatePreview);
+  startDateInput.addEventListener('change', updatePreview);
+  endDateInput.addEventListener('change', updatePreview);
+  halfDayCheck.addEventListener('change', updatePreview);
+
+  // Disable end date when half day is selected
+  halfDayCheck.addEventListener('change', () => {
+    if (halfDayCheck.checked) {
+      endDateInput.value = startDateInput.value;
+      endDateInput.disabled = true;
+    } else {
+      endDateInput.disabled = false;
+    }
+  });
+
+  // Form submission
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    submitBtn.innerText = 'Submitting...';
+
+    const leaveData = {
+      employeeId,
+      leaveType: leaveTypeSelect.value,
+      startDate: startDateInput.value,
+      endDate: halfDayCheck.checked ? startDateInput.value : endDateInput.value,
+      reason: modal.querySelector('#reason').value,
+      isHalfDay: halfDayCheck.checked
     };
 
-    leaveTypeSelect.addEventListener('change', updatePreview);
-    startDateInput.addEventListener('change', updatePreview);
-    endDateInput.addEventListener('change', updatePreview);
-    halfDayCheck.addEventListener('change', updatePreview);
+    const result = await leaveService.applyLeave(leaveData);
 
-    // Disable end date when half day is selected
-    halfDayCheck.addEventListener('change', () => {
-        if (halfDayCheck.checked) {
-            endDateInput.value = startDateInput.value;
-            endDateInput.disabled = true;
-        } else {
-            endDateInput.disabled = false;
-        }
-    });
+    if (result.success) {
+      document.body.removeChild(modal);
+      alert(`Leave request submitted successfully!\n\nRequest ID: ${result.request.id}\nDays: ${result.request.days}\nStatus: Pending Approval`);
+      window.dispatchEvent(new Event('leave-updated'));
+    } else {
+      alert('Error: ' + result.message);
+      submitBtn.disabled = false;
+      submitBtn.innerText = 'Submit Request';
+    }
+  });
 
-    // Form submission
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-
-        const leaveData = {
-            employeeId,
-            leaveType: leaveTypeSelect.value,
-            startDate: startDateInput.value,
-            endDate: halfDayCheck.checked ? startDateInput.value : endDateInput.value,
-            reason: modal.querySelector('#reason').value,
-            isHalfDay: halfDayCheck.checked
-        };
-
-        const result = leaveService.applyLeave(leaveData);
-
-        if (result.success) {
-            document.body.removeChild(modal);
-            alert(`Leave request submitted successfully!\n\nRequest ID: ${result.request.id}\nDays: ${result.request.days}\nStatus: Pending Approval`);
-            location.reload();
-        } else {
-            alert('Error: ' + result.message);
-        }
-    });
-
-    modal.querySelector('#cancel-modal').addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
+  modal.querySelector('#cancel-modal').addEventListener('click', () => {
+    document.body.removeChild(modal);
+  });
 }
 
-function loadPendingApprovals(container, approverId) {
-    const approvalContainer = container.querySelector('#pending-approvals');
-    if (!approvalContainer) return;
+async function loadPendingApprovals(container, approverId) {
+  const approvalContainer = container.querySelector('#pending-approvals');
+  if (!approvalContainer) return;
 
-    const pendingRequests = leaveService.getLeaveRequests({
-        status: 'pending',
-        approverId
-    });
+  const pendingRequests = await leaveService.getLeaveRequests({
+    status: 'pending',
+    approverId
+  });
 
-    if (pendingRequests.length === 0) {
-        approvalContainer.innerHTML = '<p class="text-muted text-center p-4">No pending approvals</p>';
-        return;
-    }
+  if (pendingRequests.length === 0) {
+    approvalContainer.innerHTML = '<p class="text-muted text-center p-4">No pending approvals</p>';
+    return;
+  }
 
-    const table = document.createElement('table');
-    table.innerHTML = `
+  const table = document.createElement('table');
+  table.innerHTML = `
     <thead>
       <tr>
         <th>Employee</th>
@@ -358,23 +390,23 @@ function loadPendingApprovals(container, approverId) {
     </tbody>
   `;
 
-    approvalContainer.innerHTML = '';
-    approvalContainer.appendChild(table);
+  approvalContainer.innerHTML = '';
+  approvalContainer.appendChild(table);
 }
 
-function loadLeaveHistory(container, filters) {
-    const historyContainer = container.querySelector('#leave-history');
-    if (!historyContainer) return;
+async function loadLeaveHistory(container, filters) {
+  const historyContainer = container.querySelector('#leave-history');
+  if (!historyContainer) return;
 
-    const requests = leaveService.getLeaveRequests(filters);
+  const requests = await leaveService.getLeaveRequests(filters);
 
-    if (requests.length === 0) {
-        historyContainer.innerHTML = '<p class="text-muted text-center p-8">No leave requests found</p>';
-        return;
-    }
+  if (requests.length === 0) {
+    historyContainer.innerHTML = '<p class="text-muted text-center p-8">No leave requests found</p>';
+    return;
+  }
 
-    const table = document.createElement('table');
-    table.innerHTML = `
+  const table = document.createElement('table');
+  table.innerHTML = `
     <thead>
       <tr>
         <th>Request ID</th>
@@ -389,8 +421,8 @@ function loadLeaveHistory(container, filters) {
     </thead>
     <tbody>
       ${requests.map(req => {
-        const canCancel = req.status === 'pending' || req.status === 'approved';
-        return `
+    const canCancel = req.status === 'pending' || req.status === 'approved';
+    return `
           <tr>
             <td class="font-medium">${req.id}</td>
             <td>${req.employeeName}</td>
@@ -404,74 +436,81 @@ function loadLeaveHistory(container, filters) {
             </td>
           </tr>
         `;
-    }).join('')}
+  }).join('')}
     </tbody>
   `;
 
-    historyContainer.innerHTML = '';
-    historyContainer.appendChild(table);
+  historyContainer.innerHTML = '';
+  historyContainer.appendChild(table);
 }
 
 function getStatusBadge(status) {
-    const badges = {
-        pending: '<span class="badge badge-warning">Pending</span>',
-        approved: '<span class="badge badge-success">Approved</span>',
-        rejected: '<span class="badge badge-danger">Rejected</span>',
-        cancelled: '<span class="badge">Cancelled</span>'
-    };
-    return badges[status] || status;
+  const badges = {
+    pending: '<span class="badge badge-warning">Pending</span>',
+    approved: '<span class="badge badge-success">Approved</span>',
+    rejected: '<span class="badge badge-danger">Rejected</span>',
+    cancelled: '<span class="badge">Cancelled</span>'
+  };
+  return badges[status] || status;
 }
 
 function formatDate(dateStr) {
-    return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function formatDateTime(dateStr) {
-    return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return new Date(dateStr).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-function getEmployeeOptions() {
-    const employees = employeeService.getEmployees({ status: 'active' });
-    return employees.map(e => `<option value="${e.id}">${e.name} (${e.employeeId})</option>`).join('');
+async function getEmployeeOptions() {
+  const employees = await employeeService.getEmployees({ status: 'active' });
+  return employees.map(e => `<option value="${e.id}">${e.name} (${e.employeeId})</option>`).join('');
+}
+
+async function loadEmployeeFilterOptions(container) {
+  const empFilter = container.querySelector('#employee-filter');
+  if (empFilter) {
+    empFilter.innerHTML = '<option value="">All Employees</option>' + await getEmployeeOptions();
+  }
 }
 
 // Global action handlers
-window.approveLeave = (requestId) => {
-    if (confirm('Approve this leave request?')) {
-        const currentUser = authService.getCurrentUser();
-        const result = leaveService.approveLeave(requestId, currentUser.userId);
-        if (result.success) {
-            alert('Leave approved successfully!');
-            location.reload();
-        } else {
-            alert('Error: ' + result.message);
-        }
+window.approveLeave = async (requestId) => {
+  if (confirm('Approve this leave request?')) {
+    const currentUser = authService.getCurrentUser();
+    const result = await leaveService.approveLeave(requestId, currentUser.userId);
+    if (result.success) {
+      alert('Leave approved successfully!');
+      window.dispatchEvent(new Event('leave-updated'));
+    } else {
+      alert('Error: ' + result.message);
     }
+  }
 };
 
-window.rejectLeave = (requestId) => {
-    const reason = prompt('Enter rejection reason:');
-    if (reason) {
-        const currentUser = authService.getCurrentUser();
-        const result = leaveService.rejectLeave(requestId, currentUser.userId, reason);
-        if (result.success) {
-            alert('Leave rejected');
-            location.reload();
-        } else {
-            alert('Error: ' + result.message);
-        }
+window.rejectLeave = async (requestId) => {
+  const reason = prompt('Enter rejection reason:');
+  if (reason) {
+    const currentUser = authService.getCurrentUser();
+    const result = await leaveService.rejectLeave(requestId, currentUser.userId, reason);
+    if (result.success) {
+      alert('Leave rejected');
+      window.dispatchEvent(new Event('leave-updated'));
+    } else {
+      alert('Error: ' + result.message);
     }
+  }
 };
 
-window.cancelLeave = (requestId) => {
-    if (confirm('Cancel this leave request?')) {
-        const currentUser = authService.getCurrentUser();
-        const result = leaveService.cancelLeave(requestId, currentUser.userId);
-        if (result.success) {
-            alert('Leave request cancelled');
-            location.reload();
-        } else {
-            alert('Error: ' + result.message);
-        }
+window.cancelLeave = async (requestId) => {
+  if (confirm('Cancel this leave request?')) {
+    const currentUser = authService.getCurrentUser();
+    const result = await leaveService.cancelLeave(requestId, currentUser.userId);
+    if (result.success) {
+      alert('Leave request cancelled');
+      window.dispatchEvent(new Event('leave-updated'));
+    } else {
+      alert('Error: ' + result.message);
     }
+  }
 };

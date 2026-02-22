@@ -1,41 +1,54 @@
 import { db } from './database.js';
 
-// Authentication Service
+// Authentication Service (Supabase-backed)
 class AuthService {
     constructor() {
         this.currentUser = null;
-        this.loadSession();
+        this._sessionLoaded = false;
+    }
+
+    // Load session from sessionStorage (cached locally for speed)
+    async loadSession() {
+        if (this._sessionLoaded) return;
+        const sessionStr = sessionStorage.getItem('hrms_session');
+        if (sessionStr) {
+            const session = JSON.parse(sessionStr);
+            // Verify user still exists in Supabase
+            const user = await db.getOne('users', 'id', session.userId);
+            if (user) {
+                this.currentUser = user;
+            } else {
+                sessionStorage.removeItem('hrms_session');
+            }
+        }
+        this._sessionLoaded = true;
     }
 
     // Login with employee ID/email and company code
-    login(identifier, password, companyCode) {
-        // Get all users
-        const users = db.get('users') || [];
-
-        // Find matching user
-        const user = users.find(u =>
-            (u.employeeId === identifier || u.email === identifier) &&
+    async login(identifier, password, companyCode) {
+        // Fetch all users matching the identifier
+        const allUsers = await db.getAll('users');
+        const user = allUsers.find(u =>
+            (u.employee_id === identifier || u.email === identifier) &&
             u.password === password &&
-            u.companyCode === companyCode &&
+            u.company_code === companyCode &&
             u.status === 'active'
         );
 
         if (user) {
-            // Create session
             const session = {
                 userId: user.id,
-                employeeId: user.employeeId,
+                employeeId: user.employee_id,
                 name: user.name,
                 role: user.role,
-                companyCode: user.companyCode,
+                companyCode: user.company_code,
                 loginTime: new Date().toISOString()
             };
 
-            db.set('session', session);
+            sessionStorage.setItem('hrms_session', JSON.stringify(session));
             this.currentUser = user;
 
-            // Log audit
-            this.logAudit('login', user.id, 'User logged in');
+            await this.logAudit('login', user.id, 'User logged in');
 
             return { success: true, user: session };
         }
@@ -44,62 +57,53 @@ class AuthService {
     }
 
     // Logout
-    logout() {
+    async logout() {
         if (this.currentUser) {
-            this.logAudit('logout', this.currentUser.id, 'User logged out');
+            await this.logAudit('logout', this.currentUser.id, 'User logged out');
         }
-        db.remove('session');
+        sessionStorage.removeItem('hrms_session');
         this.currentUser = null;
     }
 
-    // Load session from storage
-    loadSession() {
-        const session = db.get('session');
-        if (session) {
-            const users = db.get('users') || [];
-            this.currentUser = users.find(u => u.id === session.userId);
-        }
-    }
-
-    // Get current user
+    // Get current user session
     getCurrentUser() {
-        return db.get('session');
+        const sessionStr = sessionStorage.getItem('hrms_session');
+        return sessionStr ? JSON.parse(sessionStr) : null;
     }
 
-    // Check if user is authenticated
+    // Check if authenticated
     isAuthenticated() {
-        return db.get('session') !== null;
+        return sessionStorage.getItem('hrms_session') !== null;
     }
 
     // First-time password setup
-    setupPassword(employeeId, tempPassword, newPassword) {
-        const users = db.get('users') || [];
-        const userIndex = users.findIndex(u =>
-            u.employeeId === employeeId && u.tempPassword === tempPassword
+    async setupPassword(employeeId, tempPassword, newPassword) {
+        const allUsers = await db.getAll('users');
+        const user = allUsers.find(u =>
+            u.employee_id === employeeId && u.temp_password === tempPassword
         );
 
-        if (userIndex !== -1) {
-            users[userIndex].password = newPassword;
-            delete users[userIndex].tempPassword;
-            users[userIndex].passwordSetup = true;
-            db.set('users', users);
+        if (user) {
+            await db.update('users', 'id', user.id, {
+                password: newPassword,
+                temp_password: null,
+                password_setup: true
+            });
 
-            this.logAudit('password_setup', users[userIndex].id, 'Password set up');
+            await this.logAudit('password_setup', user.id, 'Password set up');
             return { success: true };
         }
 
         return { success: false, error: 'Invalid employee ID or temporary password' };
     }
 
-    // Forgot password (in real app, would send email)
-    resetPassword(email, companyCode) {
-        const users = db.get('users') || [];
-        const user = users.find(u => u.email === email && u.companyCode === companyCode);
+    // Reset password
+    async resetPassword(email, companyCode) {
+        const allUsers = await db.getAll('users');
+        const user = allUsers.find(u => u.email === email && u.company_code === companyCode);
 
         if (user) {
-            // In real app, send email with reset link
-            // For demo, just return success
-            this.logAudit('password_reset', user.id, 'Password reset requested');
+            await this.logAudit('password_reset', user.id, 'Password reset requested');
             return { success: true, message: 'Password reset instructions sent to email' };
         }
 
@@ -107,17 +111,14 @@ class AuthService {
     }
 
     // Audit logging
-    logAudit(action, userId, details) {
-        const audits = db.get('audit_logs') || [];
-        audits.push({
-            id: Date.now(),
+    async logAudit(action, userId, details) {
+        await db.insert('audit_logs', {
             action,
-            userId,
+            user_id: userId,
             details,
             timestamp: new Date().toISOString(),
-            ip: 'localhost' // In real app, would get actual IP
+            ip: 'localhost'
         });
-        db.set('audit_logs', audits);
     }
 }
 

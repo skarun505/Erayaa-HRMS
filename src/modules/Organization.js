@@ -1,10 +1,11 @@
 import { companyService } from '../core/company.js';
-import { db } from '../core/database.js';
+import { employeeService } from '../core/employee.js';
 
 export function renderOrganization() {
-    const container = document.createElement('div');
+  const container = document.createElement('div');
+  container.id = 'organization-container';
 
-    container.innerHTML = `
+  container.innerHTML = `
     <div class="page-header flex justify-between items-center">
       <div>
         <h1 class="page-title">Organization Structure</h1>
@@ -29,7 +30,7 @@ export function renderOrganization() {
     </div>
 
     <!-- Add Department Modal -->
-    <div id="dept-modal" class="modal" style="display: none;">
+    <div id="dept-modal" class="modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); padding: 2rem; overflow-y: auto; z-index: 1000;">
       <div class="card" style="max-width: 500px; margin: 2rem auto;">
         <h3 class="mb-4">Add Department</h3>
         <form id="dept-form">
@@ -42,7 +43,7 @@ export function renderOrganization() {
             <label>Department Head (Optional)</label>
             <select id="dept-head">
               <option value="">-- Select Head --</option>
-              ${getUserOptions()}
+              <!-- Options loaded dynamically -->
             </select>
           </div>
 
@@ -55,7 +56,7 @@ export function renderOrganization() {
     </div>
 
     <!-- Add Designation Modal -->
-    <div id="designation-modal" class="modal" style="display: none;">
+    <div id="designation-modal" class="modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); padding: 2rem; overflow-y: auto; z-index: 1000;">
       <div class="card" style="max-width: 500px; margin: 2rem auto;">
         <h3 class="mb-4">Add Designation</h3>
         <form id="designation-form">
@@ -68,7 +69,7 @@ export function renderOrganization() {
             <label>Department</label>
             <select id="designation-dept" required>
               <option value="">-- Select Department --</option>
-              ${getDepartmentOptions()}
+              <!-- Options loaded dynamically -->
             </select>
           </div>
 
@@ -92,81 +93,92 @@ export function renderOrganization() {
     </div>
   `;
 
-    // Render initial lists
+  // Render initial lists
+  renderDepartmentsList(container);
+  renderDesignationsList(container);
+
+  // Refresh handler
+  const refreshOrganization = () => {
+    if (!document.body.contains(container)) return;
     renderDepartmentsList(container);
     renderDesignationsList(container);
+  };
+  window.addEventListener('organization-updated', refreshOrganization);
 
-    // Department modal handlers
-    const deptModal = container.querySelector('#dept-modal');
-    const addDeptBtn = container.querySelector('#add-dept-btn');
-    const cancelDeptBtn = container.querySelector('#cancel-dept');
-    const deptForm = container.querySelector('#dept-form');
+  // Department modal handlers
+  const deptModal = container.querySelector('#dept-modal');
+  const addDeptBtn = container.querySelector('#add-dept-btn');
+  const cancelDeptBtn = container.querySelector('#cancel-dept');
+  const deptForm = container.querySelector('#dept-form');
 
-    addDeptBtn.addEventListener('click', () => {
-        deptModal.style.display = 'block';
-    });
+  addDeptBtn.addEventListener('click', async () => {
+    const headSelect = container.querySelector('#dept-head');
+    headSelect.innerHTML = '<option value="">-- Select Head --</option>' + await getUserOptions();
+    deptModal.style.display = 'block';
+  });
 
-    cancelDeptBtn.addEventListener('click', () => {
-        deptModal.style.display = 'none';
-        deptForm.reset();
-    });
+  cancelDeptBtn.addEventListener('click', () => {
+    deptModal.style.display = 'none';
+    deptForm.reset();
+  });
 
-    deptForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const name = container.querySelector('#dept-name').value;
-        const headId = container.querySelector('#dept-head').value || null;
+  deptForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = container.querySelector('#dept-name').value;
+    const headId = container.querySelector('#dept-head').value || null;
 
-        companyService.addDepartment(name, headId);
-        deptModal.style.display = 'none';
-        deptForm.reset();
-        renderDepartmentsList(container);
-        renderDesignationsList(container); // Refresh designations dropdown
-    });
+    await companyService.addDepartment(name, headId);
+    deptModal.style.display = 'none';
+    deptForm.reset();
 
-    // Designation modal handlers
-    const designationModal = container.querySelector('#designation-modal');
-    const addDesignationBtn = container.querySelector('#add-designation-btn');
-    const cancelDesignationBtn = container.querySelector('#cancel-designation');
-    const designationForm = container.querySelector('#designation-form');
+    window.dispatchEvent(new Event('organization-updated'));
+  });
 
-    addDesignationBtn.addEventListener('click', () => {
-        // Refresh department options
-        const deptSelect = designationModal.querySelector('#designation-dept');
-        deptSelect.innerHTML = '<option value="">-- Select Department --</option>' + getDepartmentOptions();
-        designationModal.style.display = 'block';
-    });
+  // Designation modal handlers
+  const designationModal = container.querySelector('#designation-modal');
+  const addDesignationBtn = container.querySelector('#add-designation-btn');
+  const cancelDesignationBtn = container.querySelector('#cancel-designation');
+  const designationForm = container.querySelector('#designation-form');
 
-    cancelDesignationBtn.addEventListener('click', () => {
-        designationModal.style.display = 'none';
-        designationForm.reset();
-    });
+  addDesignationBtn.addEventListener('click', async () => {
+    // Refresh department options
+    const deptSelect = designationModal.querySelector('#designation-dept');
+    deptSelect.innerHTML = '<option value="">-- Select Department --</option>' + await getDepartmentOptions();
+    designationModal.style.display = 'block';
+  });
 
-    designationForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const name = container.querySelector('#designation-name').value;
-        const level = parseInt(container.querySelector('#designation-level').value);
-        const departmentId = container.querySelector('#designation-dept').value;
+  cancelDesignationBtn.addEventListener('click', () => {
+    designationModal.style.display = 'none';
+    designationForm.reset();
+  });
 
-        companyService.addDesignation(name, level, departmentId);
-        designationModal.style.display = 'none';
-        designationForm.reset();
-        renderDesignationsList(container);
-    });
+  designationForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = container.querySelector('#designation-name').value;
+    const level = parseInt(container.querySelector('#designation-level').value);
+    const departmentId = container.querySelector('#designation-dept').value;
 
-    return container;
+    await companyService.addDesignation(name, level, departmentId);
+    designationModal.style.display = 'none';
+    designationForm.reset();
+
+    window.dispatchEvent(new Event('organization-updated'));
+  });
+
+  return container;
 }
 
-function renderDepartmentsList(container) {
-    const departments = companyService.getDepartments();
-    const listContainer = container.querySelector('#departments-list');
+async function renderDepartmentsList(container) {
+  const departments = await companyService.getDepartments();
+  const listContainer = container.querySelector('#departments-list');
 
-    if (departments.length === 0) {
-        listContainer.innerHTML = '<p class="text-muted">No departments added yet</p>';
-        return;
-    }
+  if (departments.length === 0) {
+    listContainer.innerHTML = '<p class="text-muted">No departments added yet</p>';
+    return;
+  }
 
-    const table = document.createElement('table');
-    table.innerHTML = `
+  const table = document.createElement('table');
+  table.innerHTML = `
     <thead>
       <tr>
         <th>Department Name</th>
@@ -192,22 +204,22 @@ function renderDepartmentsList(container) {
     </tbody>
   `;
 
-    listContainer.innerHTML = '';
-    listContainer.appendChild(table);
+  listContainer.innerHTML = '';
+  listContainer.appendChild(table);
 }
 
-function renderDesignationsList(container) {
-    const designations = companyService.getDesignations();
-    const departments = companyService.getDepartments();
-    const listContainer = container.querySelector('#designations-list');
+async function renderDesignationsList(container) {
+  const designations = await companyService.getDesignations();
+  const departments = await companyService.getDepartments();
+  const listContainer = container.querySelector('#designations-list');
 
-    if (designations.length === 0) {
-        listContainer.innerHTML = '<p class="text-muted">No designations added yet</p>';
-        return;
-    }
+  if (designations.length === 0) {
+    listContainer.innerHTML = '<p class="text-muted">No designations added yet</p>';
+    return;
+  }
 
-    const table = document.createElement('table');
-    table.innerHTML = `
+  const table = document.createElement('table');
+  table.innerHTML = `
     <thead>
       <tr>
         <th>Designation</th>
@@ -219,8 +231,8 @@ function renderDesignationsList(container) {
     </thead>
     <tbody>
       ${designations.map(des => {
-        const dept = departments.find(d => d.id === des.departmentId);
-        return `
+    const dept = departments.find(d => d.id === des.departmentId);
+    return `
           <tr>
             <td class="font-medium">${des.name}</td>
             <td>${dept?.name || 'N/A'}</td>
@@ -232,31 +244,31 @@ function renderDesignationsList(container) {
             </td>
           </tr>
         `;
-    }).join('')}
+  }).join('')}
     </tbody>
   `;
 
-    listContainer.innerHTML = '';
-    listContainer.appendChild(table);
+  listContainer.innerHTML = '';
+  listContainer.appendChild(table);
 }
 
-function getUserOptions() {
-    const users = db.get('users') || [];
-    return users.map(u => `<option value="${u.id}">${u.name} (${u.employeeId})</option>`).join('');
+async function getUserOptions() {
+  const users = await employeeService.getEmployees();
+  return users.map(u => `<option value="${u.id}">${u.name} (${u.employeeId})</option>`).join('');
 }
 
-function getDepartmentOptions() {
-    const departments = companyService.getDepartments();
-    return departments.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+async function getDepartmentOptions() {
+  const departments = await companyService.getDepartments();
+  return departments.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
 }
 
-// Global delete functions for demonstration
-window.deleteDepartment = (id) => {
-    companyService.deleteDepartment(id);
-    location.reload(); // Simple reload for demo
+// Global delete functions
+window.deleteDepartment = async (id) => {
+  await companyService.deleteDepartment(id);
+  window.dispatchEvent(new Event('organization-updated'));
 };
 
-window.deleteDesignation = (id) => {
-    companyService.deleteDesignation(id);
-    location.reload(); // Simple reload for demo
+window.deleteDesignation = async (id) => {
+  await companyService.deleteDesignation(id);
+  window.dispatchEvent(new Event('organization-updated'));
 };

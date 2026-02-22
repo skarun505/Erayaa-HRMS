@@ -1,125 +1,62 @@
 import { db } from '../core/database.js';
 import { authService } from '../core/auth.js';
 
-// Employee Management Service
+// Employee Management Service (Supabase-backed)
 class EmployeeService {
-    constructor() {
-        this.initializeLeaveTemplates();
-        this.initializeSalaryTemplates();
-    }
+    constructor() { }
 
-    // Initialize leave policy templates
-    initializeLeaveTemplates() {
-        if (!db.get('leave_templates')) {
-            db.set('leave_templates', [
-                {
-                    id: 'LT001',
-                    name: 'Standard Policy',
-                    cl: 12,
-                    pl: 18,
-                    sl: 10,
-                    carryForward: true,
-                    maxCarryForward: 5
-                },
-                {
-                    id: 'LT002',
-                    name: 'Manager Policy',
-                    cl: 15,
-                    pl: 20,
-                    sl: 10,
-                    carryForward: true,
-                    maxCarryForward: 8
-                },
-                {
-                    id: 'LT003',
-                    name: 'Probation Policy',
-                    cl: 6,
-                    pl: 0,
-                    sl: 5,
-                    carryForward: false,
-                    maxCarryForward: 0
-                }
-            ]);
+    // Initialize leave policy templates (seeds if empty)
+    async initializeLeaveTemplates() {
+        const count = await db.count('leave_templates');
+        if (count === 0) {
+            await db.insert('leave_templates', { id: 'LT001', name: 'Standard Policy', cl: 12, pl: 18, sl: 10, carry_forward: true, max_carry_forward: 5 });
+            await db.insert('leave_templates', { id: 'LT002', name: 'Manager Policy', cl: 15, pl: 20, sl: 10, carry_forward: true, max_carry_forward: 8 });
+            await db.insert('leave_templates', { id: 'LT003', name: 'Probation Policy', cl: 6, pl: 0, sl: 5, carry_forward: false, max_carry_forward: 0 });
         }
     }
 
-    // Initialize salary templates
-    initializeSalaryTemplates() {
-        if (!db.get('salary_templates')) {
-            db.set('salary_templates', [
-                {
-                    id: 'ST001',
-                    name: 'Junior Level',
-                    basicPercentage: 40,
-                    hraPercentage: 50,
-                    specialAllowance: 10,
-                    pfApplicable: true,
-                    esiApplicable: false,
-                    ptApplicable: true
-                },
-                {
-                    id: 'ST002',
-                    name: 'Mid Level',
-                    basicPercentage: 45,
-                    hraPercentage: 45,
-                    specialAllowance: 10,
-                    pfApplicable: true,
-                    esiApplicable: false,
-                    ptApplicable: true
-                },
-                {
-                    id: 'ST003',
-                    name: 'Senior Level',
-                    basicPercentage: 50,
-                    hraPercentage: 40,
-                    specialAllowance: 10,
-                    pfApplicable: true,
-                    esiApplicable: false,
-                    ptApplicable: true
-                }
-            ]);
+    // Initialize salary templates (seeds if empty)
+    async initializeSalaryTemplates() {
+        const count = await db.count('salary_templates');
+        if (count === 0) {
+            await db.insert('salary_templates', { id: 'ST001', name: 'Junior Level', basic_percentage: 40, hra_percentage: 50, special_allowance: 10, pf_applicable: true, esi_applicable: false, pt_applicable: true });
+            await db.insert('salary_templates', { id: 'ST002', name: 'Mid Level', basic_percentage: 45, hra_percentage: 45, special_allowance: 10, pf_applicable: true, esi_applicable: false, pt_applicable: true });
+            await db.insert('salary_templates', { id: 'ST003', name: 'Senior Level', basic_percentage: 50, hra_percentage: 40, special_allowance: 10, pf_applicable: true, esi_applicable: false, pt_applicable: true });
         }
     }
 
     // Get all employees
-    getEmployees(filters = {}) {
-        const users = db.get('users') || [];
-        let employees = users;
+    async getEmployees(filters = {}) {
+        const dbFilters = {};
+        if (filters.status) dbFilters.status = filters.status;
+        if (filters.department) dbFilters.department = filters.department;
+        if (filters.role) dbFilters.role = filters.role;
 
-        // Apply filters
-        if (filters.status) {
-            employees = employees.filter(e => e.status === filters.status);
-        }
-        if (filters.department) {
-            employees = employees.filter(e => e.department === filters.department);
-        }
-        if (filters.role) {
-            employees = employees.filter(e => e.role === filters.role);
-        }
+        const users = await db.getAll('users', dbFilters);
 
-        return employees;
+        // Map snake_case DB columns to camelCase for backward compatibility
+        return users.map(u => this._mapToLegacy(u));
     }
 
     // Get single employee
-    getEmployee(id) {
-        const users = db.get('users') || [];
-        return users.find(u => u.id === id);
+    async getEmployee(id) {
+        const user = await db.getOne('users', 'id', id);
+        return user ? this._mapToLegacy(user) : null;
     }
 
     // Add new employee
-    addEmployee(employeeData) {
-        const users = db.get('users') || [];
-
-        // Generate employee ID
-        const empCount = users.filter(u => u.employeeId?.startsWith('E')).length;
+    async addEmployee(employeeData) {
+        const users = await db.getAll('users');
+        const empCount = users.filter(u => u.employee_id?.startsWith('E')).length;
         const newEmployeeId = 'E' + String(empCount + 1).padStart(3, '0');
-
-        // Generate user ID
         const newUserId = 'U' + String(users.length + 1).padStart(3, '0');
 
-        const newEmployee = {
+        const tempPassword = this.generateTempPassword();
+        const session = authService.getCurrentUser();
+
+        const newRow = {
             id: newUserId,
-            employeeId: newEmployeeId,
+            employee_id: newEmployeeId,
             email: employeeData.email,
             name: employeeData.name,
             mobile: employeeData.mobile || '',
@@ -127,67 +64,50 @@ class EmployeeService {
             department: employeeData.department,
             designation: employeeData.designation,
             manager: employeeData.manager || null,
-            companyCode: employeeData.companyCode || 'COMP001',
-            status: 'draft', // draft → active → notice_period → exited
-            joiningDate: employeeData.joiningDate,
-            dateOfBirth: employeeData.dateOfBirth || null,
+            company_code: employeeData.companyCode || 'COMP001',
+            status: 'draft',
+            joining_date: employeeData.joiningDate,
+            date_of_birth: employeeData.dateOfBirth || null,
             address: employeeData.address || '',
-            emergencyContact: employeeData.emergencyContact || '',
-            bloodGroup: employeeData.bloodGroup || '',
-
-            // Generate temporary password
-            tempPassword: this.generateTempPassword(),
-            passwordSetup: false,
-
-            // Salary structure (to be assigned)
-            salaryStructure: null,
-            monthlyCTC: employeeData.monthlyCTC || 0,
-
-            // Leave policy (to be assigned)
-            leavePolicy: null,
-
-            createdAt: new Date().toISOString(),
-            createdBy: authService.getCurrentUser()?.userId || 'system'
+            emergency_contact: employeeData.emergencyContact || '',
+            blood_group: employeeData.bloodGroup || '',
+            temp_password: tempPassword,
+            password_setup: false,
+            salary_structure: null,
+            monthly_ctc: employeeData.monthlyCTC || 0,
+            leave_policy: null,
+            created_by: session?.userId || 'system'
         };
 
-        users.push(newEmployee);
-        db.set('users', users);
+        const inserted = await db.insert('users', newRow);
+        if (!inserted) return null;
 
-        this.logAction('employee_created', `Employee ${newEmployee.name} created with ID ${newEmployeeId}`);
+        await this.logAction('employee_created', `Employee ${employeeData.name} created with ID ${newEmployeeId}`);
 
-        return newEmployee;
+        return this._mapToLegacy(inserted);
     }
 
     // Update employee
-    updateEmployee(id, updates) {
-        const users = db.get('users') || [];
-        const index = users.findIndex(u => u.id === id);
+    async updateEmployee(id, updates) {
+        // Convert camelCase updates to snake_case for DB
+        const dbUpdates = this._mapToDb(updates);
+        dbUpdates.updated_at = new Date().toISOString();
+        dbUpdates.updated_by = authService.getCurrentUser()?.userId || 'system';
 
-        if (index !== -1) {
-            users[index] = {
-                ...users[index],
-                ...updates,
-                updatedAt: new Date().toISOString(),
-                updatedBy: authService.getCurrentUser()?.userId || 'system'
-            };
+        const updated = await db.update('users', 'id', id, dbUpdates);
+        if (!updated) return null;
 
-            db.set('users', users);
-            this.logAction('employee_updated', `Employee ${id} updated`);
-
-            return users[index];
-        }
-
-        return null;
+        await this.logAction('employee_updated', `Employee ${id} updated`);
+        return this._mapToLegacy(updated);
     }
 
     // Assign salary structure
-    assignSalaryStructure(employeeId, monthlyCTC, templateId) {
-        const template = this.getSalaryTemplate(templateId);
+    async assignSalaryStructure(employeeId, monthlyCTC, templateId) {
+        const template = await this.getSalaryTemplate(templateId);
         if (!template) return null;
 
         const salaryStructure = this.calculateSalaryBreakdown(monthlyCTC, template);
-
-        return this.updateEmployee(employeeId, {
+        return await this.updateEmployee(employeeId, {
             monthlyCTC,
             salaryStructure
         });
@@ -195,13 +115,19 @@ class EmployeeService {
 
     // Calculate salary breakdown
     calculateSalaryBreakdown(grossSalary, template) {
-        const basic = Math.round((grossSalary * template.basicPercentage) / 100);
-        const hra = Math.round((grossSalary * template.hraPercentage) / 100);
+        const basicPct = template.basicPercentage || template.basic_percentage;
+        const hraPct = template.hraPercentage || template.hra_percentage;
+        const pfApplicable = template.pfApplicable ?? template.pf_applicable;
+        const esiApplicable = template.esiApplicable ?? template.esi_applicable;
+        const ptApplicable = template.ptApplicable ?? template.pt_applicable;
+
+        const basic = Math.round((grossSalary * basicPct) / 100);
+        const hra = Math.round((grossSalary * hraPct) / 100);
         const special = grossSalary - basic - hra;
 
-        const pf = template.pfApplicable ? Math.round(basic * 0.12) : 0;
-        const esi = template.esiApplicable && grossSalary <= 21000 ? Math.round(grossSalary * 0.0075) : 0;
-        const pt = template.ptApplicable ? 200 : 0;
+        const pf = pfApplicable ? Math.round(basic * 0.12) : 0;
+        const esi = esiApplicable && grossSalary <= 21000 ? Math.round(grossSalary * 0.0075) : 0;
+        const pt = ptApplicable ? 200 : 0;
 
         return {
             gross: grossSalary,
@@ -218,8 +144,8 @@ class EmployeeService {
     }
 
     // Assign leave policy
-    assignLeavePolicy(employeeId, templateId) {
-        const template = this.getLeaveTemplate(templateId);
+    async assignLeavePolicy(employeeId, templateId) {
+        const template = await this.getLeaveTemplate(templateId);
         if (!template) return null;
 
         const leavePolicy = {
@@ -227,20 +153,19 @@ class EmployeeService {
             cl: { total: template.cl, used: 0, remaining: template.cl },
             pl: { total: template.pl, used: 0, remaining: template.pl },
             sl: { total: template.sl, used: 0, remaining: template.sl },
-            carryForward: template.carryForward,
-            maxCarryForward: template.maxCarryForward,
+            carryForward: template.carry_forward ?? template.carryForward,
+            maxCarryForward: template.max_carry_forward ?? template.maxCarryForward,
             assignedDate: new Date().toISOString()
         };
 
-        return this.updateEmployee(employeeId, { leavePolicy });
+        return await this.updateEmployee(employeeId, { leavePolicy });
     }
 
-    // Update employee status (draft → active → notice_period → exited)
-    updateStatus(employeeId, newStatus, effectiveDate, remarks = '') {
-        const employee = this.getEmployee(employeeId);
+    // Update employee status
+    async updateStatus(employeeId, newStatus, effectiveDate, remarks = '') {
+        const employee = await this.getEmployee(employeeId);
         if (!employee) return null;
 
-        // Validate status transition
         const validTransitions = {
             draft: ['active', 'exited'],
             active: ['notice_period', 'exited'],
@@ -252,14 +177,9 @@ class EmployeeService {
             throw new Error(`Invalid status transition from ${employee.status} to ${newStatus}`);
         }
 
-        // If activating, ensure password and policies are set
         if (newStatus === 'active' && employee.status === 'draft') {
-            if (!employee.salaryStructure) {
-                throw new Error('Cannot activate: Salary structure not assigned');
-            }
-            if (!employee.leavePolicy) {
-                throw new Error('Cannot activate: Leave policy not assigned');
-            }
+            if (!employee.salaryStructure) throw new Error('Cannot activate: Salary structure not assigned');
+            if (!employee.leavePolicy) throw new Error('Cannot activate: Leave policy not assigned');
         }
 
         const updates = {
@@ -278,7 +198,6 @@ class EmployeeService {
 
         if (newStatus === 'active') {
             updates.activationDate = effectiveDate;
-            // Set password if not set
             if (!employee.password) {
                 updates.password = employee.tempPassword;
             }
@@ -286,29 +205,26 @@ class EmployeeService {
             updates.exitDate = effectiveDate;
         }
 
-        this.logAction('status_changed', `Employee ${employeeId} status changed to ${newStatus}`);
-
-        return this.updateEmployee(employeeId, updates);
+        await this.logAction('status_changed', `Employee ${employeeId} status changed to ${newStatus}`);
+        return await this.updateEmployee(employeeId, updates);
     }
 
     // Get leave templates
-    getLeaveTemplates() {
-        return db.get('leave_templates') || [];
+    async getLeaveTemplates() {
+        return await db.getAll('leave_templates');
     }
 
-    getLeaveTemplate(id) {
-        const templates = this.getLeaveTemplates();
-        return templates.find(t => t.id === id);
+    async getLeaveTemplate(id) {
+        return await db.getOne('leave_templates', 'id', id);
     }
 
     // Get salary templates
-    getSalaryTemplates() {
-        return db.get('salary_templates') || [];
+    async getSalaryTemplates() {
+        return await db.getAll('salary_templates');
     }
 
-    getSalaryTemplate(id) {
-        const templates = this.getSalaryTemplates();
-        return templates.find(t => t.id === id);
+    async getSalaryTemplate(id) {
+        return await db.getOne('salary_templates', 'id', id);
     }
 
     // Generate temporary password
@@ -317,24 +233,95 @@ class EmployeeService {
     }
 
     // Search employees
-    searchEmployees(query) {
-        const employees = this.getEmployees();
+    async searchEmployees(query) {
+        const employees = await this.getEmployees();
         const lowerQuery = query.toLowerCase();
-
         return employees.filter(emp =>
-            emp.name.toLowerCase().includes(lowerQuery) ||
-            emp.employeeId.toLowerCase().includes(lowerQuery) ||
-            emp.email.toLowerCase().includes(lowerQuery) ||
+            emp.name?.toLowerCase().includes(lowerQuery) ||
+            emp.employeeId?.toLowerCase().includes(lowerQuery) ||
+            emp.email?.toLowerCase().includes(lowerQuery) ||
             emp.department?.toLowerCase().includes(lowerQuery)
         );
     }
 
     // Log actions
-    logAction(action, details) {
+    async logAction(action, details) {
         const session = authService.getCurrentUser();
         if (session) {
-            authService.logAudit(action, session.userId, details);
+            await authService.logAudit(action, session.userId, details);
         }
+    }
+
+    // ---- Internal mapping helpers ----
+    // Convert DB snake_case row to camelCase (legacy format)
+    _mapToLegacy(row) {
+        if (!row) return null;
+        return {
+            id: row.id,
+            employeeId: row.employee_id,
+            email: row.email,
+            password: row.password,
+            tempPassword: row.temp_password,
+            passwordSetup: row.password_setup,
+            name: row.name,
+            mobile: row.mobile,
+            role: row.role,
+            department: row.department,
+            designation: row.designation,
+            manager: row.manager,
+            managerId: row.manager_id,
+            companyCode: row.company_code,
+            status: row.status,
+            joiningDate: row.joining_date,
+            dateOfBirth: row.date_of_birth,
+            address: row.address,
+            emergencyContact: row.emergency_contact,
+            bloodGroup: row.blood_group,
+            gender: row.gender,
+            salary: row.salary,
+            salaryStructure: row.salary_structure,
+            monthlyCTC: row.monthly_ctc,
+            leavePolicy: row.leave_policy,
+            noticePeriod: row.notice_period,
+            activationDate: row.activation_date,
+            exitDate: row.exit_date,
+            statusHistory: row.status_history,
+            createdAt: row.created_at,
+            createdBy: row.created_by,
+            updatedAt: row.updated_at,
+            updatedBy: row.updated_by
+        };
+    }
+
+    // Convert camelCase updates to snake_case for DB
+    _mapToDb(updates) {
+        const map = {
+            employeeId: 'employee_id',
+            tempPassword: 'temp_password',
+            passwordSetup: 'password_setup',
+            companyCode: 'company_code',
+            joiningDate: 'joining_date',
+            dateOfBirth: 'date_of_birth',
+            emergencyContact: 'emergency_contact',
+            bloodGroup: 'blood_group',
+            salaryStructure: 'salary_structure',
+            monthlyCTC: 'monthly_ctc',
+            leavePolicy: 'leave_policy',
+            noticePeriod: 'notice_period',
+            activationDate: 'activation_date',
+            exitDate: 'exit_date',
+            statusHistory: 'status_history',
+            managerId: 'manager_id',
+            createdBy: 'created_by',
+            updatedBy: 'updated_by'
+        };
+
+        const result = {};
+        Object.entries(updates).forEach(([key, value]) => {
+            const dbKey = map[key] || key;
+            result[dbKey] = value;
+        });
+        return result;
     }
 }
 

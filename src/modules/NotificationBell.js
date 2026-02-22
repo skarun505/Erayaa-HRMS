@@ -8,23 +8,27 @@ export function renderNotificationBell() {
     container.style.position = 'relative';
     container.style.cursor = 'pointer';
 
-    const updateBell = () => {
-        const unreadCount = notificationService.getNotifications(user.userId, true).length;
+    const updateBell = async () => {
+        const notifs = await notificationService.getNotifications(user.userId, true);
+        const unreadCount = notifs.length;
         container.innerHTML = `
-            <div class="bell-icon" style="font-size: 1.25rem;">🔔</div>
+            <div class="bell-icon" style="font-size: 1.25rem;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-bell"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+            </div>
             ${unreadCount > 0 ? `
                 <span class="badge badge-danger" style="position: absolute; top: -5px; right: -5px; padding: 2px 5px; border-radius: 10px; font-size: 10px;">
                     ${unreadCount}
                 </span>
             ` : ''}
-            <div id="notification-dropdown" class="card" style="display: none; position: absolute; right: 0; top: 30px; width: 300px; z-index: 1000; padding: 0.5rem; max-height: 400px; overflow-y: auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);">
-                <div class="flex justify-between items-center mb-2 px-2">
-                    <h4 class="m-0">Notifications</h4>
-                    <button class="btn btn-sm text-xs" id="mark-all-read">Mark all as read</button>
+            <div id="notification-dropdown" class="card" style="display: none; position: absolute; right: 0; top: 40px; width: 300px; z-index: 1000; padding: 1rem; max-height: 400px; overflow-y: auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); background: var(--surface); border: 1px solid var(--border);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);">
+                    <h4 style="margin: 0; font-size: 1rem; font-weight: 600;">Notifications</h4>
+                    <button class="btn btn-sm btn-text" id="mark-all-read" style="font-size: 0.75rem;">Mark all read</button>
                 </div>
                 <div id="notif-list"></div>
             </div>
         `;
+
 
         const dropdown = container.querySelector('#notification-dropdown');
         container.onclick = (e) => {
@@ -35,17 +39,17 @@ export function renderNotificationBell() {
 
         const markAllBtn = container.querySelector('#mark-all-read');
         if (markAllBtn) {
-            markAllBtn.onclick = (e) => {
+            markAllBtn.onclick = async (e) => {
                 e.stopPropagation();
-                notificationService.markAllAsRead(user.userId);
-                updateBell();
+                await notificationService.markAllAsRead(user.userId);
+                await updateBell();
             };
         }
     };
 
-    const loadNotifications = () => {
+    const loadNotifications = async () => {
         const list = container.querySelector('#notif-list');
-        const notifs = notificationService.getNotifications(user.userId);
+        const notifs = await notificationService.getNotifications(user.userId);
 
         if (notifs.length === 0) {
             list.innerHTML = '<p class="text-center text-muted p-4">No notifications</p>';

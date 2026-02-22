@@ -2,208 +2,160 @@ import { db } from '../core/database.js';
 import { authService } from '../core/auth.js';
 import { employeeService } from '../core/employee.js';
 
+// Shift Service (Supabase-backed)
 class ShiftService {
-    constructor() {
-        this.initializeShifts();
-    }
+    constructor() { }
 
-    // Initialize default shifts
-    initializeShifts() {
-        if (!db.get('shifts')) {
-            db.set('shifts', [
-                {
-                    id: 'GS',
-                    name: 'General Shift',
-                    code: 'GS',
-                    startTime: '09:00',
-                    endTime: '18:00',
-                    breakDuration: 60, // minutes
-                    graceTime: 15, // minutes
-                    halfDayHours: 4,
-                    fullDayHours: 8,
-                    isDefault: true,
-                    color: '#3b82f6'
-                },
-                {
-                    id: 'MS',
-                    name: 'Morning Shift',
-                    code: 'MS',
-                    startTime: '06:00',
-                    endTime: '14:00',
-                    breakDuration: 30,
-                    graceTime: 10,
-                    halfDayHours: 4,
-                    fullDayHours: 8,
-                    isDefault: false,
-                    color: '#10b981'
-                },
-                {
-                    id: 'ES',
-                    name: 'Evening Shift',
-                    code: 'ES',
-                    startTime: '14:00',
-                    endTime: '22:00',
-                    breakDuration: 30,
-                    graceTime: 10,
-                    halfDayHours: 4,
-                    fullDayHours: 8,
-                    isDefault: false,
-                    color: '#f59e0b'
-                },
-                {
-                    id: 'NS',
-                    name: 'Night Shift',
-                    code: 'NS',
-                    startTime: '22:00',
-                    endTime: '06:00',
-                    breakDuration: 45,
-                    graceTime: 15,
-                    halfDayHours: 4,
-                    fullDayHours: 8,
-                    isDefault: false,
-                    color: '#6366f1'
-                },
-                {
-                    id: 'WO',
-                    name: 'Weekly Off',
-                    code: 'WO',
-                    startTime: null,
-                    endTime: null,
-                    isOff: true,
-                    color: '#94a3b8'
-                }
-            ]);
-        }
-    }
+    // Initialize (seeds handled by SQL migration)
+    async initializeShifts() { }
 
     // Get all shifts
-    getShifts() {
-        return db.get('shifts') || [];
+    async getShifts() {
+        const rows = await db.getAll('shifts');
+        return rows.map(r => this._mapToLegacy(r));
     }
 
     // Get single shift
-    getShift(id) {
-        const shifts = this.getShifts();
-        return shifts.find(s => s.id === id);
+    async getShift(id) {
+        const row = await db.getOne('shifts', 'id', id);
+        return row ? this._mapToLegacy(row) : null;
     }
 
     // Add new shift
-    addShift(shiftData) {
-        const shifts = this.getShifts();
-
-        // Generate ID
+    async addShift(shiftData) {
+        const shifts = await db.getAll('shifts');
         const newId = 'S' + String(shifts.length + 1).padStart(3, '0');
 
-        const newShift = {
+        const newRow = {
             id: newId,
-            ...shiftData,
-            createdAt: new Date().toISOString()
+            name: shiftData.name,
+            code: shiftData.code,
+            start_time: shiftData.startTime,
+            end_time: shiftData.endTime,
+            break_duration: shiftData.breakDuration,
+            grace_time: shiftData.graceTime,
+            half_day_hours: shiftData.halfDayHours,
+            full_day_hours: shiftData.fullDayHours,
+            is_default: shiftData.isDefault || false,
+            is_off: shiftData.isOff || false,
+            color: shiftData.color || '#3b82f6'
         };
 
-        shifts.push(newShift);
-        db.set('shifts', shifts);
-
-        this.logAction('shift_created', `Shift ${shiftData.name} created`);
-
-        return newShift;
+        const inserted = await db.insert('shifts', newRow);
+        await this.logAction('shift_created', `Shift ${shiftData.name} created`);
+        return inserted ? this._mapToLegacy(inserted) : null;
     }
 
     // Update shift
-    updateShift(id, updates) {
-        const shifts = this.getShifts();
-        const index = shifts.findIndex(s => s.id === id);
+    async updateShift(id, updates) {
+        const dbUpdates = {};
+        if (updates.name !== undefined) dbUpdates.name = updates.name;
+        if (updates.code !== undefined) dbUpdates.code = updates.code;
+        if (updates.startTime !== undefined) dbUpdates.start_time = updates.startTime;
+        if (updates.endTime !== undefined) dbUpdates.end_time = updates.endTime;
+        if (updates.breakDuration !== undefined) dbUpdates.break_duration = updates.breakDuration;
+        if (updates.graceTime !== undefined) dbUpdates.grace_time = updates.graceTime;
+        if (updates.halfDayHours !== undefined) dbUpdates.half_day_hours = updates.halfDayHours;
+        if (updates.fullDayHours !== undefined) dbUpdates.full_day_hours = updates.fullDayHours;
+        if (updates.isDefault !== undefined) dbUpdates.is_default = updates.isDefault;
+        if (updates.color !== undefined) dbUpdates.color = updates.color;
 
-        if (index !== -1) {
-            shifts[index] = { ...shifts[index], ...updates };
-            db.set('shifts', shifts);
-            this.logAction('shift_updated', `Shift ${shifts[index].name} updated`);
-            return shifts[index];
-        }
-        return null;
+        const updated = await db.update('shifts', 'id', id, dbUpdates);
+        if (updated) await this.logAction('shift_updated', `Shift ${updated.name} updated`);
+        return updated ? this._mapToLegacy(updated) : null;
     }
 
     // Delete shift
-    deleteShift(id) {
-        const shifts = this.getShifts();
-        const filtered = shifts.filter(s => s.id !== id);
-
-        if (filtered.length < shifts.length) {
-            db.set('shifts', filtered);
-            this.logAction('shift_deleted', `Shift ${id} deleted`);
-            return true;
-        }
-        return false;
+    async deleteShift(id) {
+        const result = await db.deleteRow('shifts', 'id', id);
+        if (result) await this.logAction('shift_deleted', `Shift ${id} deleted`);
+        return result;
     }
 
-    // Assign Roster (Shift Assignment)
-    assignRoster(assignments) {
-        // assignments = [{ employeeId, date, shiftId }]
-        let roster = db.get('roster') || {};
-
-        assignments.forEach(assign => {
-            const key = `${assign.employeeId}_${assign.date}`;
-            roster[key] = {
-                shiftId: assign.shiftId,
-                assignedBy: authService.getCurrentUser()?.userId,
-                assignedOn: new Date().toISOString()
-            };
-        });
-
-        db.set('roster', roster);
-        this.logAction('roster_updated', `Assigned shifts for ${assignments.length} entries`);
+    // Assign Roster
+    async assignRoster(assignments) {
+        const session = authService.getCurrentUser();
+        for (const assign of assignments) {
+            await db.upsert('roster', {
+                employee_id: assign.employeeId,
+                date: assign.date,
+                shift_id: assign.shiftId,
+                assigned_by: session?.userId,
+                assigned_on: new Date().toISOString()
+            }, { onConflict: 'employee_id,date' });
+        }
+        await this.logAction('roster_updated', `Assigned shifts for ${assignments.length} entries`);
     }
 
     // Get employee shift for specific date
-    getEmployeeShift(employeeId, date) {
-        const roster = db.get('roster') || {};
-        const key = `${employeeId}_${date}`;
-        const assignment = roster[key];
-
-        if (assignment) {
-            return this.getShift(assignment.shiftId);
+    async getEmployeeShift(employeeId, date) {
+        const roster = await db.getAll('roster', { employee_id: employeeId, date });
+        if (roster.length > 0) {
+            const shift = await this.getShift(roster[0].shift_id);
+            if (shift) return shift;
         }
 
-        // Return default shift if no specific assignment
-        const shifts = this.getShifts();
-        return shifts.find(s => s.isDefault) || shifts[0];
+        // Return default shift
+        const shifts = await this.getShifts();
+        return shifts.find(s => s.isDefault) || shifts[0] || {
+            id: 'GS', name: 'General Shift', startTime: '10:00', endTime: '19:00',
+            graceTime: 15, fullDayHours: 8, halfDayHours: 4
+        };
     }
 
     // Get roster for date range
-    getRoster(startDate, endDate, employeeId = null) {
-        const roster = db.get('roster') || {};
+    async getRoster(startDate, endDate, employeeId = null) {
         const result = [];
-
         const start = new Date(startDate);
         const end = new Date(endDate);
 
-        for (let d = start; d <= end; d.setDate(d.getDate() + 1)) {
+        const employees = employeeId
+            ? [await employeeService.getEmployee(employeeId)]
+            : await employeeService.getEmployees({ status: 'active' });
+
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
             const dateStr = d.toISOString().split('T')[0];
 
-            const employees = employeeId
-                ? [employeeService.getEmployee(employeeId)]
-                : employeeService.getEmployees({ status: 'active' });
-
-            employees.forEach(emp => {
-                if (!emp) return;
-                const shift = this.getEmployeeShift(emp.id, dateStr);
+            for (const emp of employees) {
+                if (!emp) continue;
+                const shift = await this.getEmployeeShift(emp.id, dateStr);
                 result.push({
                     date: dateStr,
                     employeeId: emp.id,
                     employeeName: emp.name,
                     shift
                 });
-            });
+            }
         }
 
         return result;
     }
 
     // Log actions
-    logAction(action, details) {
+    async logAction(action, details) {
         const session = authService.getCurrentUser();
         if (session) {
-            authService.logAudit(action, session.userId, details);
+            await authService.logAudit(action, session.userId, details);
         }
+    }
+
+    // Map DB row to legacy format
+    _mapToLegacy(row) {
+        if (!row) return null;
+        return {
+            id: row.id,
+            name: row.name,
+            code: row.code,
+            startTime: row.start_time,
+            endTime: row.end_time,
+            breakDuration: row.break_duration,
+            graceTime: row.grace_time,
+            halfDayHours: row.half_day_hours,
+            fullDayHours: row.full_day_hours,
+            isDefault: row.is_default,
+            isOff: row.is_off,
+            color: row.color
+        };
     }
 }
 

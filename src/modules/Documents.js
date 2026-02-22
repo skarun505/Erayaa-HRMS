@@ -1,13 +1,18 @@
-import { db } from '../core/database.js';
 import { authService } from '../core/auth.js';
+import { employeeService } from '../core/employee.js';
 
 export function renderDocuments() {
   const container = document.createElement('div');
   const currentUser = authService.getCurrentUser();
 
+  container.innerHTML = '<div class="text-muted text-center py-8">Loading documents...</div>';
+  loadDocumentsData(container, currentUser);
+  return container;
+}
+
+async function loadDocumentsData(container, currentUser) {
   // Get employee data
-  const users = db.get('users') || [];
-  const employee = users.find(u => u.id === currentUser.userId) || {};
+  const employee = await employeeService.getEmployee(currentUser.userId) || {};
 
   // Sample documents for the employee
   const documents = [

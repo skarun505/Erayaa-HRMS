@@ -4,42 +4,269 @@ import { employeeService } from '../core/employee.js';
 
 export function renderExitDashboard() {
     const container = document.createElement('div');
-    const currentUser = authService.getCurrentUser();
-    const isHROrAdmin = currentUser.role === 'hr_admin' || currentUser.role === 'super_admin';
+    container.id = 'exit-dashboard-container';
 
-    const currentExit = exitService.getExitProcess(currentUser.userId);
-
+    // Immediate partial render to show loading state
     container.innerHTML = `
         <div class="page-header">
             <h1 class="page-title">Exit & Separations</h1>
             <p class="page-subtitle">Manage resignation workflows and Full & Final settlements</p>
         </div>
-
-        <div id="exit-main-container">
-            ${isHROrAdmin ? renderHRView() : renderEmployeeView(currentExit, currentUser)}
+        <div id="exit-main-container" style="display: flex; justify-content: center; padding: 3rem;">
+            <div class="text-muted">Loading exit details...</div>
         </div>
     `;
 
-    // Initialize listeners
-    setTimeout(() => {
-        if (!isHROrAdmin && !currentExit) {
-            const form = container.querySelector('#resignation-form');
-            if (form) {
-                form.addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    handleResignation(form, currentUser.userId);
-                });
+    const loadContent = async () => {
+        const currentUser = authService.getCurrentUser();
+        if (!currentUser) {
+            container.innerHTML = '<div class="alert alert-error">Please login first</div>';
+            return;
+        }
+
+        const isHROrAdmin = currentUser.role === 'hr_admin' || currentUser.role === 'super_admin';
+
+        let currentExit = null;
+        try {
+            // Race condition: Timeout after 5s to prevent infinite hanging
+            const fetchExits = exitService.getExits();
+            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Request timed out')), 5000));
+
+            const allExits = await Promise.race([fetchExits, timeout]).catch(err => {
+                console.warn('Exit fetch warning:', err);
+                return []; // Fallback to empty
+            });
+
+            currentExit = allExits.find(e =>
+                e.employeeId === currentUser.userId &&
+                ['pending_approval', 'approved', 'in_clearance', 'notice_period'].includes(e.status)
+            ) || null;
+
+            console.log('Exit Dashboard State:', { role: currentUser.role, foundExit: !!currentExit });
+
+            // Render final content
+            const content = isHROrAdmin ? await renderHRView() : renderEmployeeView(currentExit, currentUser);
+
+            const mainContainer = container.querySelector('#exit-main-container');
+            if (mainContainer) {
+                mainContainer.innerHTML = content;
+                mainContainer.style.display = 'block'; // Reset flex/grid if needed
+                mainContainer.style.padding = '0';
+            }
+
+        } catch (err) {
+            console.error('Critical Error in Exit Dashboard:', err);
+            const mainContainer = container.querySelector('#exit-main-container');
+            if (mainContainer) mainContainer.innerHTML = `<div class="alert alert-danger">Error loading dashboard: ${err.message}</div>`;
+        }
+
+        // Initialize listeners
+        setTimeout(() => {
+            if (!isHROrAdmin && !currentExit) {
+                const form = container.querySelector('#resignation-form');
+                if (form) {
+                    form.addEventListener('submit', async (e) => {
+                        e.preventDefault();
+                        await handleResignation(form, currentUser.userId);
+                    });
+                }
+            }
+
+            // Attach HR action listeners
+            container.querySelectorAll('.approve-exit-btn').forEach(btn => {
+                btn.addEventListener('click', () => processExitAction(btn.dataset.id, 'approved'));
+            });
+            container.querySelectorAll('.reject-exit-btn').forEach(btn => {
+                btn.addEventListener('click', () => processExitAction(btn.dataset.id, 'rejected'));
+            });
+            container.querySelectorAll('.clearance-btn').forEach(btn => {
+                btn.addEventListener('click', () => showClearanceModal(btn.dataset.id));
+            });
+            container.querySelectorAll('.fnf-btn').forEach(btn => {
+                btn.addEventListener('click', () => calculateFnF(btn.dataset.id));
+            });
+
+            // Withdraw button
+            const withdrawBtn = container.querySelector('#withdraw-btn');
+            if (withdrawBtn) {
+                withdrawBtn.addEventListener('click', () => withdrawResignation(withdrawBtn.dataset.id));
+            }
+        }, 0);
+    };
+
+    loadContent();
+
+    const handleUpdate = () => {
+        if (document.body.contains(container)) {
+            loadContent();
+        }
+    };
+    window.addEventListener('exit-updated', handleUpdate);
+
+    // ===== Action Handlers =====
+
+    async function handleResignation(form, userId) {
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const originalText = submitBtn.textContent;
+        submitBtn.textContent = 'Submitting...';
+        submitBtn.disabled = true;
+
+        const data = {
+            employeeId: userId,
+            reason: form.querySelector('#reason').value,
+            requestedLWD: form.querySelector('#requested-lwd').value,
+            personalEmail: form.querySelector('#personal-email').value,
+            comments: form.querySelector('#comments').value
+        };
+
+        console.log('Submitting resignation with data:', data);
+
+        try {
+            const res = await exitService.initiateExit(data);
+            console.log('Resignation result:', res);
+            if (res.success) {
+                alert('Resignation submitted successfully.');
+                window.dispatchEvent(new Event('exit-updated'));
+            } else {
+                alert(res.message || 'Failed to submit resignation.');
+                submitBtn.textContent = originalText;
+                submitBtn.disabled = false;
+            }
+        } catch (err) {
+            console.error('Resignation submission error:', err);
+            alert('Error submitting resignation: ' + err.message);
+            submitBtn.textContent = originalText;
+            submitBtn.disabled = false;
+        }
+    }
+
+    async function withdrawResignation(id) {
+        if (confirm('Are you sure you want to withdraw your resignation?')) {
+            try {
+                const res = await exitService.rejectExit(id, authService.getCurrentUser().userId, 'User withdrew resignation');
+                if (res.success) {
+                    alert('Resignation withdrawn successfully.');
+                    window.dispatchEvent(new Event('exit-updated'));
+                }
+            } catch (err) {
+                alert('Error withdrawing resignation: ' + err.message);
             }
         }
-    }, 0);
+    }
+
+    async function processExitAction(id, status) {
+        const comments = prompt('Any comments for the employee?') || '';
+        try {
+            let res;
+            if (status === 'approved') {
+                res = await exitService.approveExit(id, authService.getCurrentUser().userId, comments);
+            } else {
+                res = await exitService.rejectExit(id, authService.getCurrentUser().userId, comments);
+            }
+            if (res.success) {
+                alert(`Exit request ${status}.`);
+                window.dispatchEvent(new Event('exit-updated'));
+            }
+        } catch (err) {
+            alert('Error processing exit: ' + err.message);
+        }
+    }
+
+    async function showClearanceModal(exitId) {
+        try {
+            const allExits = await exitService.getExits();
+            const exit = allExits.find(e => e.id === exitId);
+            if (!exit || !exit.clearance) {
+                alert('Exit record not found.');
+                return;
+            }
+
+            let html = '<h3 class="mb-4">Clearance Status</h3><div style="display: flex; flex-direction: column; gap: 1rem;">';
+            Object.entries(exit.clearance).forEach(([deptId, dept]) => {
+                const isCleared = dept.completed || dept.status === 'cleared';
+                html += `<div class="p-3 rounded" style="border: 1px solid var(--border); background: var(--bg-secondary);">
+                            <strong>${dept.department || deptId}</strong> - ${isCleared ? '✅ Cleared' : '⏳ Pending'}
+                            <div style="margin-top: 0.5rem; font-size: 0.8rem;">
+                                ${(dept.items || []).map((item, idx) => `
+                                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0;">
+                                        <span>${item.name}</span>
+                                        <input type="checkbox" ${item.cleared || item.status === 'cleared' ? 'checked' : ''} 
+                                            class="clearance-item-cb" data-exit="${exitId}" data-dept="${deptId}" data-idx="${idx}">
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>`;
+            });
+            html += '<button class="btn btn-secondary w-full" id="close-clearance-modal">Close</button></div>';
+
+            const div = document.createElement('div');
+            div.className = 'modal-backdrop';
+            div.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 9999;';
+            div.innerHTML = `<div class="card" style="max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;">${html}</div>`;
+            document.body.appendChild(div);
+
+            // Attach checkbox listeners
+            div.querySelectorAll('.clearance-item-cb').forEach(cb => {
+                cb.addEventListener('change', async () => {
+                    const status = cb.checked ? 'cleared' : 'pending';
+                    const user = authService.getCurrentUser();
+                    try {
+                        await exitService.updateClearance(
+                            cb.dataset.exit,
+                            cb.dataset.dept,
+                            parseInt(cb.dataset.idx),
+                            cb.checked,
+                            user.name || user.userId
+                        );
+                    } catch (err) {
+                        console.error('Error updating clearance:', err);
+                    }
+                });
+            });
+
+            div.querySelector('#close-clearance-modal').addEventListener('click', () => {
+                div.remove();
+                window.dispatchEvent(new Event('exit-updated'));
+            });
+
+            // Click backdrop to close
+            div.addEventListener('click', (e) => {
+                if (e.target === div) {
+                    div.remove();
+                    window.dispatchEvent(new Event('exit-updated'));
+                }
+            });
+        } catch (err) {
+            alert('Error loading clearance: ' + err.message);
+        }
+    }
+
+    async function calculateFnF(exitId) {
+        try {
+            const fnf = await exitService.calculateFnF(exitId);
+            if (fnf) {
+                alert(`FnF calculated. Net Payable: ₹${fnf.netFnF?.toLocaleString() || 'N/A'}`);
+                if (confirm('Directly complete exit and update employee status to EXITED?')) {
+                    await exitService.completeExit(exitId);
+                }
+                window.dispatchEvent(new Event('exit-updated'));
+            } else {
+                alert('Unable to calculate FnF.');
+            }
+        } catch (err) {
+            alert('Error calculating FnF: ' + err.message);
+        }
+    }
 
     return container;
 }
 
+// ===== View Renderers =====
+
 function renderEmployeeView(currentExit, user) {
     if (!currentExit) {
         return `
-            <div class="card max-w-2xl mx-auto">
+            <div class="card" style="max-width: 600px;">
                 <h3 class="mb-4">Submit Resignation</h3>
                 <form id="resignation-form">
                     <div class="form-group">
@@ -50,6 +277,8 @@ function renderEmployeeView(currentExit, user) {
                             <option>Personal Reasons</option>
                             <option>Higher Studies</option>
                             <option>Relocation</option>
+                            <option>Health Reasons</option>
+                            <option>Other</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -58,14 +287,14 @@ function renderEmployeeView(currentExit, user) {
                     </div>
                     <div class="form-group">
                         <label>Personal Email (for FnF communication)</label>
-                        <input type="email" id="personal-email" placeholder="e.g. john.doe@icloud.com" required>
+                        <input type="email" id="personal-email" placeholder="e.g. john.doe@gmail.com" required>
                     </div>
                     <div class="form-group">
                         <label>Additional Comments</label>
                         <textarea id="comments" rows="3" placeholder="Explain further..."></textarea>
                     </div>
-                    <div class="alert alert-warning text-sm mb-4">
-                        <strong>Note:</strong> Your notice period as per policy is ${employeeService.getEmployee(user.userId).noticePeriod || 30} days. 
+                    <div class="alert alert-warning text-sm mb-4" style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2); color: var(--warning);">
+                        <strong>Note:</strong> Your notice period as per policy is 30 days. 
                         Final LWD will be subject to management approval.
                     </div>
                     <button type="submit" class="btn btn-danger w-full">Submit Resignation</button>
@@ -74,6 +303,13 @@ function renderEmployeeView(currentExit, user) {
         `;
     }
 
+    const clearanceHTML = currentExit.clearance ? Object.entries(currentExit.clearance).map(([id, dept]) => `
+        <div class="flex justify-between items-center p-3 mb-2 rounded" style="border: 1px solid var(--border);">
+            <span>${dept.department || id}</span>
+            <span class="badge ${dept.completed ? 'badge-success' : 'badge-warning'}">${dept.completed ? 'Cleared' : 'Pending'}</span>
+        </div>
+    `).join('') : '<p class="text-muted">No clearance data available</p>';
+
     return `
         <div class="grid grid-2 gap-6">
             <div class="card">
@@ -81,27 +317,22 @@ function renderEmployeeView(currentExit, user) {
                 <div class="mt-4 p-4 rounded" style="background: var(--bg-secondary);">
                     <div class="flex justify-between items-center mb-2">
                         <span class="text-sm text-muted">Current Status:</span>
-                        <span class="badge ${getStatusBadge(currentExit.status)}">${currentExit.status.toUpperCase()}</span>
+                        <span class="badge ${getStatusBadge(currentExit.status)}">${(currentExit.status || '').replace(/_/g, ' ').toUpperCase()}</span>
                     </div>
                     <div class="flex justify-between items-center mb-2">
                         <span class="text-sm text-muted">LWD:</span>
-                        <span class="font-medium">${currentExit.requestedLWD}</span>
+                        <span class="font-medium">${currentExit.requestedLWD || '—'}</span>
                     </div>
-                    <div class="text-xs text-muted mt-2">Submitted on: ${new Date(currentExit.resignationDate).toLocaleDateString()}</div>
+                    <div class="text-xs text-muted mt-2">Submitted on: ${currentExit.resignationDate ? new Date(currentExit.resignationDate).toLocaleDateString() : '—'}</div>
                 </div>
 
                 ${currentExit.status === 'pending_approval' ? `
-                    <button class="btn btn-sm btn-secondary w-full mt-4" onclick="window.withdrawResignation('${currentExit.id}')">Withdraw Resignation</button>
+                    <button class="btn btn-sm btn-secondary w-full mt-4" id="withdraw-btn" data-id="${currentExit.id}">Withdraw Resignation</button>
                 ` : ''}
 
                 <h3 class="mt-6 mb-4">Department Clearance</h3>
                 <div class="clearance-list">
-                    ${Object.entries(currentExit.clearance).map(([id, dept]) => `
-                        <div class="flex justify-between items-center p-3 mb-2 rounded border">
-                            <span>${dept.department} Clearance</span>
-                            <span class="badge ${dept.status === 'cleared' ? 'badge-success' : 'badge-secondary'}">${dept.status}</span>
-                        </div>
-                    `).join('')}
+                    ${clearanceHTML}
                 </div>
             </div>
 
@@ -109,18 +340,18 @@ function renderEmployeeView(currentExit, user) {
                 <h3>FnF Settlement Detail</h3>
                 ${currentExit.status === 'completed' && currentExit.fnf ? `
                     <div class="mt-4">
-                        <div class="highlight-box p-4 rounded text-center mb-4" style="background: var(--primary-light); color: var(--primary);">
+                        <div class="p-4 rounded text-center mb-4" style="background: rgba(204, 255, 0, 0.1);">
                             <div class="text-sm">Net Payable Amount</div>
-                            <div class="text-3xl font-bold">₹${currentExit.fnf.netFnF.toLocaleString()}</div>
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--primary);">₹${(currentExit.fnf.netFnF || 0).toLocaleString()}</div>
                         </div>
-                        <div class="space-y-2 text-sm">
-                            <div class="flex justify-between"><span>Unpaid Days Salary:</span> <span>₹${currentExit.fnf.unpaidSalary.toLocaleString()}</span></div>
-                            <div class="flex justify-between"><span>Leave Encashment:</span> <span>₹${currentExit.fnf.leaveEncashment.toLocaleString()}</span></div>
-                            <div class="flex justify-between border-t pt-2 font-bold"><span>Total Earnings:</span> <span>₹${currentExit.fnf.totalEarnings.toLocaleString()}</span></div>
+                        <div class="text-sm" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            <div class="flex justify-between"><span>Unpaid Days Salary:</span> <span>₹${(currentExit.fnf.unpaidSalary || 0).toLocaleString()}</span></div>
+                            <div class="flex justify-between"><span>Leave Encashment:</span> <span>₹${(currentExit.fnf.leaveEncashment || 0).toLocaleString()}</span></div>
+                            <div class="flex justify-between font-bold" style="border-top: 1px solid var(--border); padding-top: 0.5rem;"><span>Total Earnings:</span> <span>₹${(currentExit.fnf.totalEarnings || 0).toLocaleString()}</span></div>
                         </div>
                     </div>
                 ` : `
-                    <div class="text-center p-8 text-muted">
+                    <div class="text-center p-4 text-muted" style="padding: 2rem;">
                         <div style="font-size: 3rem;">💰</div>
                         <p>FnF details will be visible once clearance is completed and management approves the final amount.</p>
                     </div>
@@ -130,14 +361,20 @@ function renderEmployeeView(currentExit, user) {
     `;
 }
 
-function renderHRView() {
-    const allExits = exitService.getAllExitProcesses();
+async function renderHRView() {
+    let allExits = [];
+    try {
+        allExits = await exitService.getExits();
+    } catch (err) {
+        console.error('Error loading exits:', err);
+    }
+
     const pendingExits = allExits.filter(e => e.status === 'pending_approval');
     const inProgressExits = allExits.filter(e => e.status === 'approved');
 
     return `
-        <div class="grid grid-3 gap-6">
-            <div class="card col-span-2">
+        <div class="grid" style="grid-template-columns: 2fr 1fr; gap: 1.5rem;">
+            <div class="card" style="grid-column: span 1;">
                 <h3>Pending Resignations</h3>
                 <div class="table-container mt-4">
                     <table>
@@ -150,15 +387,15 @@ function renderHRView() {
                             </tr>
                         </thead>
                         <tbody>
-                            ${pendingExits.length === 0 ? '<tr><td colspan="4" class="text-center p-4">No pending requests</td></tr>' : ''}
+                            ${pendingExits.length === 0 ? '<tr><td colspan="4" class="text-center p-4 text-muted">No pending requests</td></tr>' : ''}
                             ${pendingExits.map(exit => `
                                 <tr>
-                                    <td>${exit.employeeName}</td>
-                                    <td>${exit.requestedLWD}</td>
-                                    <td class="text-xs">${exit.reason}</td>
+                                    <td>${exit.employeeName || '—'}</td>
+                                    <td>${exit.requestedLWD || '—'}</td>
+                                    <td class="text-xs">${exit.reason || '—'}</td>
                                     <td>
-                                        <button class="btn btn-sm btn-success" onclick="window.processExitAction('${exit.id}', 'approved')">Approve</button>
-                                        <button class="btn btn-sm btn-danger" onclick="window.processExitAction('${exit.id}', 'rejected')">Reject</button>
+                                        <button class="btn btn-sm btn-success approve-exit-btn" data-id="${exit.id}">Approve</button>
+                                        <button class="btn btn-sm btn-danger reject-exit-btn" data-id="${exit.id}">Reject</button>
                                     </td>
                                 </tr>
                             `).join('')}
@@ -178,23 +415,24 @@ function renderHRView() {
                             </tr>
                         </thead>
                         <tbody>
-                            ${inProgressExits.length === 0 ? '<tr><td colspan="4" class="text-center p-4">No exit processes in progress</td></tr>' : ''}
+                            ${inProgressExits.length === 0 ? '<tr><td colspan="4" class="text-center p-4 text-muted">No exit processes in progress</td></tr>' : ''}
                             ${inProgressExits.map(exit => {
-        const clearedCount = Object.values(exit.clearance).filter(c => c.status === 'cleared').length;
-        const totalCount = Object.values(exit.clearance).length;
+        const clearanceEntries = exit.clearance ? Object.values(exit.clearance) : [];
+        const clearedCount = clearanceEntries.filter(c => c.completed || c.status === 'cleared').length;
+        const totalCount = clearanceEntries.length || 1;
         return `
                                     <tr>
-                                        <td>${exit.employeeName}</td>
+                                        <td>${exit.employeeName || '—'}</td>
                                         <td>
                                             <div class="text-xs">${clearedCount}/${totalCount} Cleared</div>
-                                            <div class="progress-bar mt-1">
-                                                <div class="progress" style="width: ${(clearedCount / totalCount) * 100}%"></div>
+                                            <div style="height: 4px; background: var(--bg-secondary); border-radius: 2px; margin-top: 4px; overflow: hidden;">
+                                                <div style="height: 100%; width: ${(clearedCount / totalCount) * 100}%; background: var(--primary); border-radius: 2px;"></div>
                                             </div>
                                         </td>
                                         <td>${exit.fnf ? 'Calculated' : 'Pending'}</td>
                                         <td>
-                                            <button class="btn btn-sm btn-secondary" onclick="window.showClearanceModal('${exit.id}')">Update Clearance</button>
-                                            <button class="btn btn-sm btn-primary" onclick="window.calculateFnF('${exit.id}')">Calc FnF</button>
+                                            <button class="btn btn-sm btn-secondary clearance-btn" data-id="${exit.id}">Update Clearance</button>
+                                            <button class="btn btn-sm btn-primary fnf-btn" data-id="${exit.id}">Calc FnF</button>
                                         </td>
                                     </tr>
                                 `;
@@ -206,14 +444,18 @@ function renderHRView() {
 
             <div class="card">
                 <h3>Quick Stats</h3>
-                <div class="space-y-4 mt-4">
-                    <div class="p-4 rounded border-l-4 border-warning bg-gray-50">
-                        <div class="text-2xl">${pendingExits.length}</div>
-                        <div class="text-sm">Pending Resignations</div>
+                <div style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem;">
+                    <div class="p-4 rounded" style="border-left: 4px solid var(--warning); background: var(--bg-secondary);">
+                        <div style="font-size: 1.5rem; font-weight: bold;">${pendingExits.length}</div>
+                        <div class="text-sm text-muted">Pending Resignations</div>
                     </div>
-                    <div class="p-4 rounded border-l-4 border-primary bg-gray-50">
-                        <div class="text-2xl">${inProgressExits.length}</div>
-                        <div class="text-sm">In Clearance Stage</div>
+                    <div class="p-4 rounded" style="border-left: 4px solid var(--primary); background: var(--bg-secondary);">
+                        <div style="font-size: 1.5rem; font-weight: bold;">${inProgressExits.length}</div>
+                        <div class="text-sm text-muted">In Clearance Stage</div>
+                    </div>
+                    <div class="p-4 rounded" style="border-left: 4px solid var(--success); background: var(--bg-secondary);">
+                        <div style="font-size: 1.5rem; font-weight: bold;">${allExits.filter(e => e.status === 'completed').length}</div>
+                        <div class="text-sm text-muted">Completed Exits</div>
                     </div>
                 </div>
             </div>
@@ -227,84 +469,3 @@ function getStatusBadge(status) {
     if (status === 'rejected' || status === 'cancelled') return 'badge-danger';
     return 'badge-warning';
 }
-
-// Global actions
-window.handleResignation = (form, userId) => {
-    const data = {
-        reason: form.querySelector('#reason').value,
-        requestedLWD: form.querySelector('#requested-lwd').value,
-        personalEmail: form.querySelector('#personal-email').value,
-        comments: form.querySelector('#comments').value
-    };
-
-    const res = exitService.submitResignation(userId, data);
-    if (res.success) {
-        alert('Resignation submitted successfully.');
-        window.location.reload();
-    } else {
-        alert(res.message);
-    }
-};
-
-window.withdrawResignation = (id) => {
-    if (confirm('Are you sure you want to withdraw your resignation?')) {
-        const res = exitService.updateExitStatus(id, 'cancelled', 'User withdrew resignation');
-        if (res.success) {
-            alert('Resignation withdrawn successfully.');
-            window.location.reload();
-        }
-    }
-};
-
-window.processExitAction = (id, status) => {
-    const comments = prompt('Any comments for the employee?');
-    const res = exitService.updateExitStatus(id, status, comments);
-    if (res.success) {
-        alert(`Exit request ${status}.`);
-        window.location.reload();
-    }
-};
-
-window.showClearanceModal = (exitId) => {
-    const exits = exitService.getAllExitProcesses();
-    const exit = exits.find(e => e.id === exitId);
-
-    let html = '<h3>Clearance Status</h3><div class="space-y-4">';
-    Object.entries(exit.clearance).forEach(([deptId, dept]) => {
-        html += `<div class="p-3 border rounded bg-gray-50">
-                    <strong>${dept.department}</strong> - ${dept.status === 'cleared' ? '✅' : '⏳'}
-                    <div class="mt-2 text-xs space-y-1">
-                        ${dept.items.map((item, idx) => `
-                            <div class="flex justify-between">
-                                <span>${item.name}</span>
-                                <input type="checkbox" ${item.status === 'cleared' ? 'checked' : ''} 
-                                    onchange="window.toggleClearanceItem('${exitId}', '${deptId}', ${idx}, this.checked)">
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>`;
-    });
-    html += '<button class="btn btn-secondary w-full mt-4" onclick="location.reload()">Close & Refresh</button></div>';
-
-    const div = document.createElement('div');
-    div.className = 'modal-backdrop';
-    div.innerHTML = `<div class="card max-w-lg mx-auto mt-20">${html}</div>`;
-    document.body.appendChild(div);
-};
-
-window.toggleClearanceItem = (exitId, deptId, itemIdx, checked) => {
-    const status = checked ? 'cleared' : 'pending';
-    const currentUser = authService.getCurrentUser();
-    exitService.updateClearanceItem(exitId, deptId, itemIdx, status, currentUser.name);
-};
-
-window.calculateFnF = (exitId) => {
-    const fnf = exitService.calculateFnF(exitId);
-    if (fnf) {
-        alert(`FnF calculated. Net Payable: ₹${fnf.netFnF.toLocaleString()}`);
-        if (confirm('Directly complete exit and update employee status to EXITED?')) {
-            exitService.completeExit(exitId);
-        }
-        window.location.reload();
-    }
-};

@@ -2,10 +2,16 @@ import { biometricService } from '../core/biometric.js';
 import { employeeService } from '../core/employee.js';
 
 export function renderBiometricConfig() {
-    const container = document.createElement('div');
-    const config = biometricService.getDeviceConfig();
+  const container = document.createElement('div');
+  container.innerHTML = '<div class="text-muted text-center py-8">Loading configuration...</div>';
+  loadBiometricConfig(container);
+  return container;
+}
 
-    container.innerHTML = `
+async function loadBiometricConfig(container) {
+  const config = await biometricService.getDeviceConfig();
+
+  container.innerHTML = `
     <div class="page-header">
       <h1 class="page-title">Biometric Device Integration</h1>
       <p class="page-subtitle">Configure and manage biometric attendance devices</p>
@@ -154,125 +160,123 @@ Break-in/out tracking</pre>
     </div>
   `;
 
-    // Show/hide network config based on connection type
-    const connectionSelect = container.querySelector('#connectionType');
-    const networkConfig = container.querySelector('#network-config');
+  // Show/hide network config based on connection type
+  const connectionSelect = container.querySelector('#connectionType');
+  const networkConfig = container.querySelector('#network-config');
 
-    connectionSelect.addEventListener('change', () => {
-        networkConfig.style.display = connectionSelect.value === 'network' ? 'block' : 'none';
-    });
+  connectionSelect.addEventListener('change', () => {
+    networkConfig.style.display = connectionSelect.value === 'network' ? 'block' : 'none';
+  });
 
-    // Handle config form submit
-    const configForm = container.querySelector('#device-config-form');
-    configForm.addEventListener('submit', (e) => {
-        e.preventDefault();
+  // Handle config form submit
+  const configForm = container.querySelector('#device-config-form');
+  configForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
 
-        const newConfig = {
-            enabled: container.querySelector('#enabled').value === 'true',
-            deviceType: container.querySelector('#deviceType').value,
-            connectionType: container.querySelector('#connectionType').value,
-            deviceIP: container.querySelector('#deviceIP').value,
-            devicePort: parseInt(container.querySelector('#devicePort').value),
-            syncInterval: parseInt(container.querySelector('#syncInterval').value),
-            autoSync: container.querySelector('#autoSync').value === 'true'
-        };
+    const newConfig = {
+      enabled: container.querySelector('#enabled').value === 'true',
+      deviceType: container.querySelector('#deviceType').value,
+      connectionType: container.querySelector('#connectionType').value,
+      deviceIP: container.querySelector('#deviceIP').value,
+      devicePort: parseInt(container.querySelector('#devicePort').value),
+      syncInterval: parseInt(container.querySelector('#syncInterval').value),
+      autoSync: container.querySelector('#autoSync').value === 'true'
+    };
 
-        biometricService.updateDeviceConfig(newConfig);
-        alert('Device configuration saved successfully!');
-    });
+    await biometricService.updateDeviceConfig(newConfig);
+    alert('Device configuration saved successfully!');
+  });
 
-    // Handle import logs
-    const importBtn = container.querySelector('#import-logs-btn');
-    importBtn.addEventListener('click', async () => {
-        const logData = container.querySelector('#log-data').value.trim();
+  // Handle import logs
+  const importBtn = container.querySelector('#import-logs-btn');
+  importBtn.addEventListener('click', async () => {
+    const logData = container.querySelector('#log-data').value.trim();
 
-        if (!logData) {
-            alert('Please paste device logs first');
-            return;
-        }
+    if (!logData) {
+      alert('Please paste device logs first');
+      return;
+    }
 
-        importBtn.disabled = true;
-        importBtn.textContent = 'Processing...';
+    importBtn.disabled = true;
+    importBtn.textContent = 'Processing...';
 
-        try {
-            const result = await biometricService.importBiometricLogs(logData);
-            showImportResult(container, result);
-            container.querySelector('#log-data').value = '';
-        } catch (error) {
-            showImportResult(container, { success: false, message: error.message });
-        } finally {
-            importBtn.disabled = false;
-            importBtn.textContent = 'Import & Process Logs';
-        }
-    });
+    try {
+      const result = await biometricService.importBiometricLogs(logData);
+      showImportResult(container, result);
+      container.querySelector('#log-data').value = '';
+    } catch (error) {
+      showImportResult(container, { success: false, message: error.message });
+    } finally {
+      importBtn.disabled = false;
+      importBtn.textContent = 'Import & Process Logs';
+    }
+  });
 
-    // Handle file upload
-    const uploadBtn = container.querySelector('#upload-btn');
-    uploadBtn.addEventListener('click', () => {
-        const fileInput = container.querySelector('#file-upload');
-        const file = fileInput.files[0];
+  // Handle file upload
+  const uploadBtn = container.querySelector('#upload-btn');
+  uploadBtn.addEventListener('click', () => {
+    const fileInput = container.querySelector('#file-upload');
+    const file = fileInput.files[0];
 
-        if (!file) {
-            alert('Please select a file first');
-            return;
-        }
+    if (!file) {
+      alert('Please select a file first');
+      return;
+    }
 
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            const content = e.target.result;
-            uploadBtn.disabled = true;
-            uploadBtn.textContent = 'Processing...';
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const content = e.target.result;
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = 'Processing...';
 
-            try {
-                const result = await biometricService.importBiometricLogs(content);
-                showImportResult(container, result);
-                fileInput.value = '';
-            } catch (error) {
-                showImportResult(container, { success: false, message: error.message });
-            } finally {
-                uploadBtn.disabled = false;
-                uploadBtn.textContent = 'Upload File';
-            }
-        };
+      try {
+        const result = await biometricService.importBiometricLogs(content);
+        showImportResult(container, result);
+        fileInput.value = '';
+      } catch (error) {
+        showImportResult(container, { success: false, message: error.message });
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = 'Upload File';
+      }
+    };
 
-        reader.readAsText(file);
-    });
+    reader.readAsText(file);
+  });
 
-    // Generate sample data
-    const generateBtn = container.querySelector('#generate-sample-btn');
-    generateBtn.addEventListener('click', async () => {
-        const employees = employeeService.getEmployees({ status: 'active' });
-        const employeeIds = employees.map(e => e.employeeId).slice(0, 5); // First 5 employees
+  // Generate sample data
+  const generateBtn = container.querySelector('#generate-sample-btn');
+  generateBtn.addEventListener('click', async () => {
+    const employees = await employeeService.getEmployees({ status: 'active' });
+    const employeeIds = employees.map(e => e.employeeId).slice(0, 5);
 
-        if (employeeIds.length === 0) {
-            alert('No active employees found. Please add employees first.');
-            return;
-        }
+    if (employeeIds.length === 0) {
+      alert('No active employees found. Please add employees first.');
+      return;
+    }
 
-        const sampleData = biometricService.generateSampleData(employeeIds, 7);
+    const sampleData = await biometricService.generateSampleData(employeeIds, 7);
 
-        generateBtn.disabled = true;
-        generateBtn.textContent = 'Generating...';
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Generating...';
 
-        try {
-            const result = await biometricService.importBiometricLogs(sampleData);
-            showImportResult(container, result);
-        } catch (error) {
-            showImportResult(container, { success: false, message: error.message });
-        } finally {
-            generateBtn.disabled = false;
-            generateBtn.textContent = 'Generate Sample Data (7 Days)';
-        }
-    });
-
-    return container;
+    try {
+      const result = await biometricService.importBiometricLogs(sampleData);
+      showImportResult(container, result);
+    } catch (error) {
+      showImportResult(container, { success: false, message: error.message });
+    } finally {
+      generateBtn.disabled = false;
+      generateBtn.textContent = 'Generate Sample Data (7 Days)';
+    }
+  });
 }
 
 function showImportResult(container, result) {
-    const resultDiv = container.querySelector('#import-result');
+  const resultDiv = container.querySelector('#import-result');
 
-    if (result.success) {
-        resultDiv.innerHTML = `
+  if (result.success) {
+    resultDiv.innerHTML = `
       <div class="alert alert-success">
         <strong>✓ Import Successful!</strong><br/>
         Imported: <strong>${result.imported}</strong> attendance records<br/>
@@ -280,19 +284,19 @@ function showImportResult(container, result) {
         ${result.errors ? `<br/><strong>Errors:</strong><br/>${result.errors.join('<br/>')}` : ''}
       </div>
     `;
-    } else {
-        resultDiv.innerHTML = `
+  } else {
+    resultDiv.innerHTML = `
       <div class="alert alert-error">
         <strong>❌ Import Failed</strong><br/>
         ${result.message || 'Unknown error'}
       </div>
     `;
-    }
+  }
 
-    resultDiv.style.display = 'block';
+  resultDiv.style.display = 'block';
 
-    // Auto-hide after 5 seconds
-    setTimeout(() => {
-        resultDiv.style.display = 'none';
-    }, 5000);
+  // Auto-hide after 5 seconds
+  setTimeout(() => {
+    resultDiv.style.display = 'none';
+  }, 5000);
 }

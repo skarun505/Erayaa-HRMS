@@ -5,18 +5,24 @@ export function renderShiftManagement() {
   const container = document.createElement('div');
 
   container.innerHTML = `
-    <div class="page-header">
-      <h1 class="page-title">Shift & Roster Management</h1>
-      <p class="page-subtitle">Manage work shifts and employee schedules</p>
+    <div class="page-header" style="background: linear-gradient(135deg, rgba(204, 255, 0, 0.1) 0%, rgba(5, 5, 5, 1) 100%); padding: 3rem 2rem; border-radius: 20px; border: 1px solid rgba(204, 255, 0, 0.1); margin-bottom: 2rem; position: relative; overflow: hidden;">
+      <div style="position: relative; z-index: 2;">
+        <h1 class="page-title" style="font-size: 2.5rem; margin-bottom: 0.5rem;">Shift & Roster Management</h1>
+        <p class="page-subtitle" style="font-size: 1.1rem; max-width: 600px; color: var(--text-muted);">
+          Manage work shifts, schedule rosters, and ensure optimal workforce coverage.
+        </p>
+      </div>
     </div>
 
-    <div class="card mb-6">
-      <nav class="nav" style="display: flex; gap: 0.5rem; padding: 0.5rem; background: var(--bg-secondary); border-radius: 8px; margin-bottom: 1.5rem;">
-        <button class="nav-item active" data-tab="roster">Roster Scheduler</button>
-        <button class="nav-item" data-tab="shifts">Shift Definitions</button>
-      </nav>
+    <div class="card mb-6" style="padding: 0; overflow: hidden; background: var(--surface);">
+       <div style="border-bottom: 1px solid var(--border); padding: 0 1rem;">
+        <nav class="nav" style="display: flex; gap: 2rem;">
+            <button class="nav-item active" data-tab="roster" style="padding: 1.25rem 0.5rem; border-bottom: 3px solid var(--primary-lime); color: var(--text-main); font-weight: 600; background: none; cursor: pointer;">Roster Scheduler</button>
+            <button class="nav-item" data-tab="shifts" style="padding: 1.25rem 0.5rem; border-bottom: 3px solid transparent; color: var(--text-muted); font-weight: 500; background: none; cursor: pointer;">Shift Definitions</button>
+        </nav>
+      </div>
 
-      <div id="shift-content"></div>
+      <div id="shift-content" style="padding: 2rem;"></div>
     </div>
   `;
 
@@ -25,8 +31,14 @@ export function renderShiftManagement() {
 
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
-      tabs.forEach(t => t.classList.remove('active'));
+      tabs.forEach(t => {
+        t.classList.remove('active');
+        t.style.borderBottomColor = 'transparent';
+        t.style.color = 'var(--text-muted)';
+      });
       tab.classList.add('active');
+      tab.style.borderBottomColor = 'var(--primary-lime)';
+      tab.style.color = 'var(--text-main)';
 
       if (tab.dataset.tab === 'shifts') {
         renderShiftDefinitions(content);
@@ -45,46 +57,66 @@ export function renderShiftManagement() {
 // ----------------------------------------------------------------------
 // Shift Definitions View
 // ----------------------------------------------------------------------
-function renderShiftDefinitions(container) {
-  const shifts = shiftService.getShifts();
+async function renderShiftDefinitions(container) {
+  const shifts = await shiftService.getShifts();
 
   container.innerHTML = `
-    <div class="flex justify-between items-center mb-4">
-      <h3>Shift Definitions</h3>
-      <button class="btn btn-primary" id="add-shift-btn">+ Add New Shift</button>
+    <div class="flex justify-between items-center mb-6">
+      <div>
+        <h3 class="font-bold text-lg">Shift Definitions</h3>
+        <p class="text-sm text-muted">Configure working hours and break timings</p>
+      </div>
+      <button class="btn btn-primary" id="add-shift-btn">
+        <span style="font-size: 1.2rem; margin-right: 0.5rem; line-height: 1;">+</span> Add New Shift
+      </button>
     </div>
 
-    <div class="grid grid-3">
+    <div class="grid grid-3 gap-6">
       ${shifts.map(shift => `
-        <div class="card" style="border-left: 4px solid ${shift.color}">
-          <div class="flex justify-between items-start mb-2">
+        <div class="card hover-reveal" style="border-top: 4px solid ${shift.color}; border-radius: 12px; transition: transform 0.2s;">
+          <div class="flex justify-between items-start mb-4">
             <div>
-              <div class="font-bold text-lg">${shift.name}</div>
-              <div class="text-xs text-muted">Code: ${shift.code}</div>
+              <div class="font-bold text-xl mb-1">${shift.name}</div>
+              <div class="text-xs text-muted font-mono bg-bg-secondary px-2 py-1 rounded inline-block">Code: ${shift.code}</div>
             </div>
-            ${shift.isDefault ? '<span class="badge badge-primary">Default</span>' : ''}
-            ${shift.isOff ? '<span class="badge badge-secondary">Off</span>' : ''}
+            ${shift.isDefault ? '<span class="badge badge-primary px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">Default</span>' : ''}
+            ${shift.isOff ? '<span class="badge badge-secondary px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">Off Day</span>' : ''}
           </div>
           
           ${!shift.isOff ? `
-            <div class="text-sm mb-2">
-              <div class="flex justify-between">
-                <span>Timing:</span>
-                <span class="font-medium">${shift.startTime} - ${shift.endTime}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Grace Time:</span>
-                <span>${shift.graceTime} mins</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Break:</span>
-                <span>${shift.breakDuration} mins</span>
-              </div>
+            <div class="flex flex-col gap-3 mb-4 p-3 bg-bg-secondary rounded-lg">
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-muted flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        Timing
+                    </span>
+                    <span class="font-bold font-mono">${shift.startTime} - ${shift.endTime}</span>
+                </div>
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-muted flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                        Grace
+                    </span>
+                    <span class="font-medium">${shift.graceTime} mins</span>
+                </div>
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-muted flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
+                        Break
+                    </span>
+                    <span class="font-medium">${shift.breakDuration} mins</span>
+                </div>
             </div>
-          ` : '<div class="text-sm text-muted mb-2">Weekly Off / Holiday Shift</div>'}
+          ` : `
+            <div class="text-sm text-muted mb-4 p-4 bg-bg-secondary rounded-lg italic text-center">
+                This shift is marked as a Weekly Off or Holiday shift. No attendance required.
+            </div>
+          `}
 
-          <div class="flex gap-2 mt-4 pt-3 border-t border-gray-100">
-            <button class="btn btn-sm btn-secondary w-full" onclick="window.editShift('${shift.id}')">Edit</button>
+          <div class="pt-4 border-t border-gray-100">
+            <button class="btn btn-sm btn-secondary w-full hover:bg-bg-hover transition-colors" onclick="window.editShift('${shift.id}')">
+                Edit Configuration
+            </button>
           </div>
         </div>
       `).join('')}
@@ -178,8 +210,8 @@ function renderRosterScheduler(container) {
   });
 }
 
-function showBulkAssignModal(container) {
-  const shifts = shiftService.getShifts();
+async function showBulkAssignModal(container) {
+  const shifts = await shiftService.getShifts();
 
   const modal = document.createElement('div');
   modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); padding: 2rem; overflow-y: auto; z-index: 1000; display: flex; align-items: center; justify-content: center;';
@@ -207,9 +239,11 @@ function showBulkAssignModal(container) {
           </select>
         </div>
 
-        <div class="alert alert-success text-sm">
-          ✓ This will assign the selected shift to <strong>ALL Active Employees</strong> for the date range.
+        <div class="alert alert-success text-sm flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+          <span>This will assign the selected shift to <strong>ALL Active Employees</strong> for the date range.</span>
         </div>
+
 
         <div class="flex gap-2">
           <button type="submit" class="btn btn-primary">Apply Assignments</button>
@@ -221,14 +255,14 @@ function showBulkAssignModal(container) {
 
   document.body.appendChild(modal);
 
-  modal.querySelector('#bulk-form').addEventListener('submit', (e) => {
+  modal.querySelector('#bulk-form').addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const fromDate = new Date(modal.querySelector('#from-date').value);
     const toDate = new Date(modal.querySelector('#to-date').value);
     const shiftId = modal.querySelector('#bulk-shift').value;
 
-    const activeEmployees = employeeService.getEmployees({ status: 'active' });
+    const activeEmployees = await employeeService.getEmployees({ status: 'active' });
     const assignments = [];
 
     // Loop through dates
@@ -245,7 +279,7 @@ function showBulkAssignModal(container) {
     }
 
     if (assignments.length > 0) {
-      shiftService.assignRoster(assignments);
+      await shiftService.assignRoster(assignments);
       alert(`Successfully assigned shift to ${activeEmployees.length} employees for ${assignments.length / activeEmployees.length} days.`);
 
       // Refresh grid
@@ -266,9 +300,9 @@ function showBulkAssignModal(container) {
   });
 }
 
-function renderRosterGrid(container, startDate) {
-  const employeeData = employeeService.getEmployees({ status: 'active' });
-  const shifts = shiftService.getShifts();
+async function renderRosterGrid(container, startDate) {
+  const employeeData = await employeeService.getEmployees({ status: 'active' });
+  const shifts = await shiftService.getShifts();
 
   // Header
   const headerRow = container.querySelector('#roster-header');
@@ -305,14 +339,17 @@ function renderRosterGrid(container, startDate) {
   tbody.innerHTML = '';
 
   // Get existing roster data
-  const rosterData = shiftService.getRoster(
+  const rosterData = await shiftService.getRoster(
     startDate.toISOString().split('T')[0],
     outputDates[6]
   );
 
   const rosterMap = {};
   rosterData.forEach(r => {
-    rosterMap[`${r.employeeId}_${r.date}`] = r.shift.code;
+    // Safety check: ensure shift object exists and has a code
+    if (r.shift && r.shift.code) {
+      rosterMap[`${r.employeeId}_${r.date}`] = r.shift.code;
+    }
   });
 
   employeeData.forEach(emp => {
@@ -342,14 +379,15 @@ function renderRosterGrid(container, startDate) {
       const select = document.createElement('select');
       select.className = 'shift-select text-sm p-1 border rounded w-full';
       select.style.fontSize = '12px';
+      select.style.outline = 'none';
       select.dataset.emp = emp.id;
       select.dataset.date = date;
 
       shifts.forEach(s => {
         const option = document.createElement('option');
         option.value = s.id;
-        option.text = s.code;
-        option.selected = s.code === currentShiftCode;
+        option.text = s.code || s.name.substring(0, 2).toUpperCase(); // Fallback code
+        option.selected = (s.code || 'GS') === currentShiftCode;
         select.appendChild(option);
       });
 
@@ -358,12 +396,12 @@ function renderRosterGrid(container, startDate) {
         const selectedShift = shifts.find(s => s.id === select.value);
         if (selectedShift) {
           select.style.borderLeft = `3px solid ${selectedShift.color}`;
-          if (selectedShift.code === 'WO') {
-            select.style.backgroundColor = '#f1f5f9';
-            select.style.color = '#94a3b8';
-          } else {
-            select.style.backgroundColor = 'white';
-            select.style.color = 'inherit';
+          select.style.backgroundColor = 'var(--bg-secondary)';
+          select.style.color = 'var(--text-main)';
+          select.style.borderColor = 'var(--border)';
+
+          if (selectedShift.code === 'WO' || selectedShift.isOff) {
+            select.style.opacity = '0.7';
           }
         }
       };
@@ -379,7 +417,7 @@ function renderRosterGrid(container, startDate) {
   });
 }
 
-function saveRosterChanges(container) {
+async function saveRosterChanges(container) {
   const selects = container.querySelectorAll('.shift-select');
   const assignments = [];
 
@@ -391,12 +429,12 @@ function saveRosterChanges(container) {
     });
   });
 
-  shiftService.assignRoster(assignments);
+  await shiftService.assignRoster(assignments);
   alert('Roster saved successfully!');
 }
 
-function showShiftModal(shiftId = null) {
-  const shift = shiftId ? shiftService.getShift(shiftId) : null;
+async function showShiftModal(shiftId = null) {
+  const shift = shiftId ? await shiftService.getShift(shiftId) : null;
 
   const modal = document.createElement('div');
   modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); padding: 2rem; overflow-y: auto; z-index: 1000; display: flex; align-items: center; justify-content: center;';
@@ -459,7 +497,7 @@ function showShiftModal(shiftId = null) {
 
   document.body.appendChild(modal);
 
-  modal.querySelector('#shift-form').addEventListener('submit', (e) => {
+  modal.querySelector('#shift-form').addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const data = {
@@ -474,9 +512,9 @@ function showShiftModal(shiftId = null) {
     };
 
     if (shift) {
-      shiftService.updateShift(shift.id, data);
+      await shiftService.updateShift(shift.id, data);
     } else {
-      shiftService.addShift(data);
+      await shiftService.addShift(data);
     }
 
     document.body.removeChild(modal);

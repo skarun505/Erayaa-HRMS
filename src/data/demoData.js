@@ -1,999 +1,274 @@
+import { supabase } from '../core/supabase.js';
 import { db } from '../core/database.js';
 
-// Comprehensive Demo Data Generator
-// Creates realistic data for all 13 HRMS modules
+// Comprehensive Demo Data Generator (Supabase-backed)
+// Creates realistic data for all HRMS modules in Supabase tables
 
-export function generateDemoData() {
-    console.log('🚀 Generating comprehensive demo data...');
+export async function generateDemoData() {
+    console.log('🚀 Generating comprehensive demo data in Supabase...');
 
-    // Additional Employees (beyond seed data)
-    generateAdditionalEmployees();
+    try {
+        await generateAdditionalEmployees();
+        await generateAttendanceData();
+        await generateLeaveData();
+        await generatePayrollData();
+        await generatePerformanceData();
+        await generateExitData();
 
-    // Departments and Designations
-    generateDepartmentsAndDesignations();
-
-    // Attendance data (last 30 days)
-    generateAttendanceData();
-
-    // Leave data
-    generateLeaveData();
-
-    // Payroll and Payslips
-    generatePayrollData();
-
-    // Performance Goals
-    generatePerformanceData();
-
-    // Exit/Resignation Records
-    generateExitData();
-
-    // Approvals
-    generateApprovalData();
-
-    // Shifts & Rosters
-    generateShiftData();
-
-    // Holidays (if not exists)
-    generateHolidays();
-
-    db.set('demoDataGenerated', true);
-    console.log('✅ Demo data generation complete!');
+        await db.setState('demoDataGenerated', true);
+        console.log('✅ Demo data generation complete!');
+    } catch (error) {
+        console.error('❌ Error generating demo data:', error);
+    }
 }
 
-// Generate additional employees (10 more)
-function generateAdditionalEmployees() {
-    const existingUsers = db.get('users') || [];
-
+// Generate additional employees
+async function generateAdditionalEmployees() {
     const additionalEmployees = [
-        // Another Manager
-        {
-            id: 'U005',
-            employeeId: 'M002',
-            email: 'michael.scott@company.com',
-            password: 'manager123',
-            name: 'Michael Scott',
-            role: 'manager',
-            department: 'Sales',
-            designation: 'Sales Manager',
-            companyCode: 'COMP001',
-            status: 'active',
-            joiningDate: '2022-03-15',
-            mobile: '+91 9876543214',
-            salary: { basic: 60000, hra: 24000, special: 16000 }
-        },
-        // Regular Employees
-        {
-            id: 'U006',
-            employeeId: 'E002',
-            email: 'priya.sharma@company.com',
-            password: 'password123',
-            name: 'Priya Sharma',
-            role: 'employee',
-            department: 'Engineering',
-            designation: 'Software Developer',
-            manager: 'Sarah Connor',
-            companyCode: 'COMP001',
-            status: 'active',
-            joiningDate: '2023-06-01',
-            mobile: '+91 9876543215',
-            salary: { basic: 35000, hra: 14000, special: 11000 }
-        },
-        {
-            id: 'U007',
-            employeeId: 'E003',
-            email: 'amit.kumar@company.com',
-            password: 'password123',
-            name: 'Amit Kumar',
-            role: 'employee',
-            department: 'Engineering',
-            designation: 'Junior Developer',
-            manager: 'Sarah Connor',
-            companyCode: 'COMP001',
-            status: 'active',
-            joiningDate: '2024-01-15',
-            mobile: '+91 9876543216',
-            salary: { basic: 25000, hra: 10000, special: 8000 }
-        },
-        {
-            id: 'U008',
-            employeeId: 'E004',
-            email: 'neha.patel@company.com',
-            password: 'password123',
-            name: 'Neha Patel',
-            role: 'employee',
-            department: 'Human Resources',
-            designation: 'HR Executive',
-            manager: 'Maria Garcia',
-            companyCode: 'COMP001',
-            status: 'active',
-            joiningDate: '2023-09-01',
-            mobile: '+91 9876543217',
-            salary: { basic: 28000, hra: 11200, special: 8800 }
-        },
-        {
-            id: 'U009',
-            employeeId: 'E005',
-            email: 'rajesh.verma@company.com',
-            password: 'password123',
-            name: 'Rajesh Verma',
-            role: 'employee',
-            department: 'Sales',
-            designation: 'Sales Executive',
-            manager: 'Michael Scott',
-            companyCode: 'COMP001',
-            status: 'active',
-            joiningDate: '2023-04-10',
-            mobile: '+91 9876543218',
-            salary: { basic: 30000, hra: 12000, special: 10000 }
-        },
-        {
-            id: 'U010',
-            employeeId: 'E006',
-            email: 'anita.singh@company.com',
-            password: 'password123',
-            name: 'Anita Singh',
-            role: 'employee',
-            department: 'Sales',
-            designation: 'Senior Sales Executive',
-            manager: 'Michael Scott',
-            companyCode: 'COMP001',
-            status: 'active',
-            joiningDate: '2022-11-01',
-            mobile: '+91 9876543219',
-            salary: { basic: 38000, hra: 15200, special: 11800 }
-        },
-        {
-            id: 'U011',
-            employeeId: 'E007',
-            email: 'vikram.rao@company.com',
-            password: 'password123',
-            name: 'Vikram Rao',
-            role: 'employee',
-            department: 'Engineering',
-            designation: 'QA Engineer',
-            manager: 'Sarah Connor',
-            companyCode: 'COMP001',
-            status: 'active',
-            joiningDate: '2023-03-20',
-            mobile: '+91 9876543220',
-            salary: { basic: 32000, hra: 12800, special: 10200 }
-        },
-        {
-            id: 'U012',
-            employeeId: 'E008',
-            email: 'kavitha.nair@company.com',
-            password: 'password123',
-            name: 'Kavitha Nair',
-            role: 'employee',
-            department: 'Engineering',
-            designation: 'DevOps Engineer',
-            manager: 'Sarah Connor',
-            companyCode: 'COMP001',
-            status: 'active',
-            joiningDate: '2022-08-15',
-            mobile: '+91 9876543221',
-            salary: { basic: 42000, hra: 16800, special: 13200 }
-        },
-        {
-            id: 'U013',
-            employeeId: 'E009',
-            email: 'suresh.menon@company.com',
-            password: 'password123',
-            name: 'Suresh Menon',
-            role: 'employee',
-            department: 'Engineering',
-            designation: 'Tech Lead',
-            manager: 'Sarah Connor',
-            companyCode: 'COMP001',
-            status: 'active',
-            joiningDate: '2021-12-01',
-            mobile: '+91 9876543222',
-            salary: { basic: 55000, hra: 22000, special: 18000 }
-        },
-        {
-            id: 'U014',
-            employeeId: 'E010',
-            email: 'deepa.reddy@company.com',
-            password: 'password123',
-            name: 'Deepa Reddy',
-            role: 'employee',
-            department: 'Human Resources',
-            designation: 'Recruitment Specialist',
-            manager: 'Maria Garcia',
-            companyCode: 'COMP001',
-            status: 'active',
-            joiningDate: '2023-07-01',
-            mobile: '+91 9876543223',
-            salary: { basic: 30000, hra: 12000, special: 9000 }
-        }
+        { id: 'U005', employee_id: 'M002', email: 'michael.scott@company.com', password: 'manager123', name: 'Michael Scott', role: 'manager', department: 'Sales & Marketing', designation: 'Sales Manager', company_code: 'COMP001', status: 'active', joining_date: '2022-03-15', mobile: '+91 9876543214', salary: { basic: 60000, hra: 24000, special: 16000 }, monthly_ctc: 100000 },
+        { id: 'U006', employee_id: 'E002', email: 'priya.sharma@company.com', password: 'password123', name: 'Priya Sharma', role: 'employee', department: 'Engineering', designation: 'Software Developer', manager: 'Sarah Connor', company_code: 'COMP001', status: 'active', joining_date: '2023-06-01', mobile: '+91 9876543215', salary: { basic: 35000, hra: 14000, special: 11000 }, monthly_ctc: 60000 },
+        { id: 'U007', employee_id: 'E003', email: 'amit.kumar@company.com', password: 'password123', name: 'Amit Kumar', role: 'employee', department: 'Engineering', designation: 'Junior Developer', manager: 'Sarah Connor', company_code: 'COMP001', status: 'active', joining_date: '2024-01-15', mobile: '+91 9876543216', salary: { basic: 25000, hra: 10000, special: 8000 }, monthly_ctc: 43000 },
+        { id: 'U008', employee_id: 'E004', email: 'neha.patel@company.com', password: 'password123', name: 'Neha Patel', role: 'employee', department: 'Human Resources', designation: 'HR Executive', manager: 'Maria Garcia', company_code: 'COMP001', status: 'active', joining_date: '2023-09-01', mobile: '+91 9876543217', salary: { basic: 28000, hra: 11200, special: 8800 }, monthly_ctc: 48000 },
+        { id: 'U009', employee_id: 'E005', email: 'rajesh.verma@company.com', password: 'password123', name: 'Rajesh Verma', role: 'employee', department: 'Sales & Marketing', designation: 'Sales Executive', manager: 'Michael Scott', company_code: 'COMP001', status: 'active', joining_date: '2023-04-10', mobile: '+91 9876543218', salary: { basic: 30000, hra: 12000, special: 10000 }, monthly_ctc: 52000 },
+        { id: 'U010', employee_id: 'E006', email: 'anita.singh@company.com', password: 'password123', name: 'Anita Singh', role: 'employee', department: 'Sales & Marketing', designation: 'Senior Sales Executive', manager: 'Michael Scott', company_code: 'COMP001', status: 'active', joining_date: '2022-11-01', mobile: '+91 9876543219', salary: { basic: 38000, hra: 15200, special: 11800 }, monthly_ctc: 65000 },
+        { id: 'U011', employee_id: 'E007', email: 'vikram.rao@company.com', password: 'password123', name: 'Vikram Rao', role: 'employee', department: 'Engineering', designation: 'QA Engineer', manager: 'Sarah Connor', company_code: 'COMP001', status: 'active', joining_date: '2023-03-20', mobile: '+91 9876543220', salary: { basic: 32000, hra: 12800, special: 10200 }, monthly_ctc: 55000 },
+        { id: 'U012', employee_id: 'E008', email: 'kavitha.nair@company.com', password: 'password123', name: 'Kavitha Nair', role: 'employee', department: 'Engineering', designation: 'DevOps Engineer', manager: 'Sarah Connor', company_code: 'COMP001', status: 'active', joining_date: '2022-08-15', mobile: '+91 9876543221', salary: { basic: 42000, hra: 16800, special: 13200 }, monthly_ctc: 72000 },
+        { id: 'U013', employee_id: 'E009', email: 'suresh.menon@company.com', password: 'password123', name: 'Suresh Menon', role: 'employee', department: 'Engineering', designation: 'Tech Lead', manager: 'Sarah Connor', company_code: 'COMP001', status: 'active', joining_date: '2021-12-01', mobile: '+91 9876543222', salary: { basic: 55000, hra: 22000, special: 18000 }, monthly_ctc: 95000 },
+        { id: 'U014', employee_id: 'E010', email: 'deepa.reddy@company.com', password: 'password123', name: 'Deepa Reddy', role: 'employee', department: 'Human Resources', designation: 'Recruitment Specialist', manager: 'Maria Garcia', company_code: 'COMP001', status: 'active', joining_date: '2023-07-01', mobile: '+91 9876543223', salary: { basic: 30000, hra: 12000, special: 9000 }, monthly_ctc: 51000 }
     ];
 
-    // Merge with existing users
-    const allUsers = [...existingUsers];
-    additionalEmployees.forEach(newEmp => {
-        if (!allUsers.find(u => u.id === newEmp.id)) {
-            allUsers.push(newEmp);
-        }
-    });
-
-    db.set('users', allUsers);
-    console.log(`✓ Created ${allUsers.length} total employees`);
-}
-
-// Generate Departments and Designations
-function generateDepartmentsAndDesignations() {
-    const departments = [
-        { id: 'D001', name: 'Engineering', headId: 'U002', status: 'active', createdAt: '2020-01-01' },
-        { id: 'D002', name: 'Human Resources', headId: 'U003', status: 'active', createdAt: '2020-01-01' },
-        { id: 'D003', name: 'Sales', headId: 'U005', status: 'active', createdAt: '2020-01-01' },
-        { id: 'D004', name: 'Management', headId: 'U004', status: 'active', createdAt: '2020-01-01' }
-    ];
-
-    const designations = [
-        { id: 'DES001', name: 'CEO', level: 1, departmentId: 'D004', status: 'active' },
-        { id: 'DES002', name: 'Engineering Manager', level: 2, departmentId: 'D001', status: 'active' },
-        { id: 'DES003', name: 'HR Manager', level: 2, departmentId: 'D002', status: 'active' },
-        { id: 'DES004', name: 'Sales Manager', level: 2, departmentId: 'D003', status: 'active' },
-        { id: 'DES005', name: 'Tech Lead', level: 3, departmentId: 'D001', status: 'active' },
-        { id: 'DES006', name: 'Senior Developer', level: 3, departmentId: 'D001', status: 'active' },
-        { id: 'DES007', name: 'Software Developer', level: 4, departmentId: 'D001', status: 'active' },
-        { id: 'DES008', name: 'Junior Developer', level: 5, departmentId: 'D001', status: 'active' },
-        { id: 'DES009', name: 'QA Engineer', level: 4, departmentId: 'D001', status: 'active' },
-        { id: 'DES010', name: 'DevOps Engineer', level: 3, departmentId: 'D001', status: 'active' },
-        { id: 'DES011', name: 'HR Executive', level: 4, departmentId: 'D002', status: 'active' },
-        { id: 'DES012', name: 'Recruitment Specialist', level: 4, departmentId: 'D002', status: 'active' },
-        { id: 'DES013', name: 'Senior Sales Executive', level: 3, departmentId: 'D003', status: 'active' },
-        { id: 'DES014', name: 'Sales Executive', level: 4, departmentId: 'D003', status: 'active' }
-    ];
-
-    db.set('departments', departments);
-    db.set('designations', designations);
-    console.log(`✓ Created ${departments.length} departments, ${designations.length} designations`);
+    for (const emp of additionalEmployees) {
+        const { error } = await supabase.from('users').upsert(emp, { onConflict: 'id' });
+        if (error) console.warn(`User ${emp.id}:`, error.message);
+    }
+    console.log(`✓ Upserted ${additionalEmployees.length} additional employees`);
 }
 
 // Generate 30 days of attendance data
-function generateAttendanceData() {
-    const users = db.get('users') || [];
-    const attendance = [];
+async function generateAttendanceData() {
+    const { data: users } = await supabase.from('users').select('id, employee_id, name').eq('status', 'active');
+    if (!users) return;
+
+    const records = [];
     const today = new Date();
 
-    users.forEach(user => {
-        // Generate last 30 days attendance
+    for (const user of users) {
         for (let i = 0; i < 30; i++) {
             const date = new Date(today);
             date.setDate(date.getDate() - i);
-
-            // Skip weekends
             if (date.getDay() === 0 || date.getDay() === 6) continue;
 
-            // Random attendance status (85% present, 10% late, 5% absent)
+            const dateStr = date.toISOString().split('T')[0];
             const rand = Math.random();
-            let status, checkIn, checkOut;
+            let status, inTime, outTime, workingHours, isLate;
 
             if (rand < 0.85) {
                 status = 'present';
-                // Normal check-in 8:45-9:15
-                const checkInHour = 8 + Math.floor(Math.random() * 1);
                 const checkInMin = 45 + Math.floor(Math.random() * 30);
-                checkIn = `${checkInHour.toString().padStart(2, '0')}:${checkInMin.toString().padStart(2, '0')}`;
-
-                // Normal check-out 17:30-19:00
+                inTime = `09:${String(checkInMin).padStart(2, '0')}`;
                 const checkOutHour = 17 + Math.floor(Math.random() * 2);
                 const checkOutMin = 30 + Math.floor(Math.random() * 30);
-                checkOut = `${checkOutHour.toString().padStart(2, '0')}:${checkOutMin.toString().padStart(2, '0')}`;
+                outTime = `${checkOutHour}:${String(checkOutMin).padStart(2, '0')}`;
+                workingHours = ((checkOutHour * 60 + checkOutMin) - (9 * 60 + checkInMin)) / 60;
+                isLate = checkInMin > 15;
             } else if (rand < 0.95) {
-                status = 'late';
-                // Late check-in 9:30-10:30
-                const checkInHour = 9 + Math.floor(Math.random() * 2);
-                const checkInMin = 30 + Math.floor(Math.random() * 30);
-                checkIn = `${checkInHour.toString().padStart(2, '0')}:${checkInMin.toString().padStart(2, '0')}`;
-
+                status = 'present';
+                isLate = true;
+                const checkInHour = 10 + Math.floor(Math.random() * 1);
+                const checkInMin = Math.floor(Math.random() * 30);
+                inTime = `${checkInHour}:${String(checkInMin).padStart(2, '0')}`;
                 const checkOutHour = 18 + Math.floor(Math.random() * 1);
                 const checkOutMin = Math.floor(Math.random() * 60);
-                checkOut = `${checkOutHour.toString().padStart(2, '0')}:${checkOutMin.toString().padStart(2, '0')}`;
+                outTime = `${checkOutHour}:${String(checkOutMin).padStart(2, '0')}`;
+                workingHours = ((checkOutHour * 60 + checkOutMin) - (checkInHour * 60 + checkInMin)) / 60;
             } else {
                 status = 'absent';
-                checkIn = null;
-                checkOut = null;
+                inTime = null;
+                outTime = null;
+                workingHours = 0;
+                isLate = false;
             }
 
-            attendance.push({
-                id: `ATT${user.id}_${date.toISOString().split('T')[0]}`,
-                employeeId: user.employeeId,
-                userId: user.id,
-                date: date.toISOString().split('T')[0],
-                checkIn,
-                checkOut,
+            records.push({
+                employee_id: user.id,
+                employee_name: user.name,
+                date: dateStr,
+                in_time: inTime,
+                out_time: outTime,
+                break_logs: [],
                 status,
-                workingHours: checkIn && checkOut ? calculateHours(checkIn, checkOut) : 0,
-                createdAt: date.toISOString()
+                working_hours: Math.round(workingHours * 100) / 100,
+                is_late: isLate,
+                is_early_checkout: false,
+                overtime_hours: Math.max(0, Math.round((workingHours - 8) * 100) / 100),
+                source: 'generated',
+                shift_id: 'GS',
+                shift_name: 'General Shift'
             });
         }
-    });
+    }
 
-    db.set('attendance', attendance);
-    console.log(`✓ Generated ${attendance.length} attendance records`);
-}
-
-function calculateHours(checkIn, checkOut) {
-    const [inH, inM] = checkIn.split(':').map(Number);
-    const [outH, outM] = checkOut.split(':').map(Number);
-    return ((outH * 60 + outM) - (inH * 60 + inM)) / 60;
+    // Upsert in batches
+    const batchSize = 50;
+    for (let i = 0; i < records.length; i += batchSize) {
+        const batch = records.slice(i, i + batchSize);
+        const { error } = await supabase.from('attendance').upsert(batch, { onConflict: 'employee_id,date' });
+        if (error) console.warn('Attendance batch error:', error.message);
+    }
+    console.log(`✓ Generated ${records.length} attendance records`);
 }
 
 // Generate Leave Data
-function generateLeaveData() {
-    const users = db.get('users') || [];
-    const leaveBalances = [];
+async function generateLeaveData() {
+    const { data: users } = await supabase.from('users').select('id, name');
+    if (!users) return;
+    const getUserName = (id) => users.find(u => u.id === id)?.name || 'Unknown';
 
-    users.forEach(user => {
-        // Leave Balance
-        leaveBalances.push({
-            employeeId: user.employeeId,
-            userId: user.id,
-            year: 2024,
-            casual: { total: 12, used: Math.floor(Math.random() * 5), balance: 12 - Math.floor(Math.random() * 5) },
-            sick: { total: 10, used: Math.floor(Math.random() * 3), balance: 10 - Math.floor(Math.random() * 3) },
-            privilege: { total: 15, used: Math.floor(Math.random() * 4), balance: 15 - Math.floor(Math.random() * 4) },
-            compensatory: { total: 0, used: 0, balance: 0 }
-        });
-    });
-
-    // Get user names for leave requests
-    const getUserName = (userId) => {
-        const user = users.find(u => u.id === userId);
-        return user ? user.name : 'Unknown';
-    };
-
-    // Sample leave applications - using the format expected by leaveService
     const leaveRequests = [
-        {
-            id: 'LR0001',
-            employeeId: 'U001',
-            employeeName: getUserName('U001'),
-            leaveType: 'CL',
-            startDate: '2024-12-20',
-            endDate: '2024-12-21',
-            days: 2,
-            isHalfDay: false,
-            status: 'approved',
-            reason: 'Personal work',
-            appliedOn: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-            approvedBy: 'Sarah Connor',
-            approvedOn: new Date().toISOString(),
-            salaryImpact: { unpaidDays: 0, deduction: 0 }
-        },
-        {
-            id: 'LR0002',
-            employeeId: 'U006',
-            employeeName: getUserName('U006'),
-            leaveType: 'SL',
-            startDate: '2024-12-18',
-            endDate: '2024-12-18',
-            days: 1,
-            isHalfDay: false,
-            status: 'approved',
-            reason: 'Not feeling well',
-            appliedOn: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-            approvedBy: 'Sarah Connor',
-            approvedOn: new Date().toISOString(),
-            salaryImpact: { unpaidDays: 0, deduction: 0 }
-        },
-        {
-            id: 'LR0003',
-            employeeId: 'U007',
-            employeeName: getUserName('U007'),
-            leaveType: 'PL',
-            startDate: '2025-01-06',
-            endDate: '2025-01-10',
-            days: 5,
-            isHalfDay: false,
-            status: 'pending',
-            reason: 'Family vacation',
-            appliedOn: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-            approvedBy: null,
-            approvedOn: null,
-            salaryImpact: { unpaidDays: 0, deduction: 0 }
-        },
-        {
-            id: 'LR0004',
-            employeeId: 'U008',
-            employeeName: getUserName('U008'),
-            leaveType: 'CL',
-            startDate: '2025-01-02',
-            endDate: '2025-01-03',
-            days: 2,
-            isHalfDay: false,
-            status: 'pending',
-            reason: 'Festival celebration',
-            appliedOn: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-            approvedBy: null,
-            approvedOn: null,
-            salaryImpact: { unpaidDays: 0, deduction: 0 }
-        },
-        {
-            id: 'LR0005',
-            employeeId: 'U009',
-            employeeName: getUserName('U009'),
-            leaveType: 'SL',
-            startDate: '2024-12-15',
-            endDate: '2024-12-16',
-            days: 2,
-            isHalfDay: false,
-            status: 'approved',
-            reason: 'Medical checkup',
-            appliedOn: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-            approvedBy: 'Sarah Connor',
-            approvedOn: new Date().toISOString(),
-            salaryImpact: { unpaidDays: 0, deduction: 0 }
-        },
-        {
-            id: 'LR0006',
-            employeeId: 'U010',
-            employeeName: getUserName('U010'),
-            leaveType: 'CL',
-            startDate: '2024-12-25',
-            endDate: '2024-12-25',
-            days: 1,
-            isHalfDay: false,
-            status: 'rejected',
-            reason: 'Short notice',
-            appliedOn: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-            approvedBy: 'Maria Garcia',
-            approvedOn: new Date().toISOString(),
-            rejectionReason: 'Critical project deadline',
-            salaryImpact: { unpaidDays: 0, deduction: 0 }
-        },
-        {
-            id: 'LR0007',
-            employeeId: 'U011',
-            employeeName: getUserName('U011'),
-            leaveType: 'PL',
-            startDate: '2025-01-15',
-            endDate: '2025-01-20',
-            days: 6,
-            isHalfDay: false,
-            status: 'pending',
-            reason: 'Hometown visit',
-            appliedOn: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-            approvedBy: null,
-            approvedOn: null,
-            salaryImpact: { unpaidDays: 0, deduction: 0 }
-        },
-        {
-            id: 'LR0008',
-            employeeId: 'U012',
-            employeeName: getUserName('U012'),
-            leaveType: 'CL',
-            startDate: '2024-12-28',
-            endDate: '2024-12-28',
-            days: 1,
-            isHalfDay: false,
-            status: 'approved',
-            reason: 'Personal errand',
-            appliedOn: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-            approvedBy: 'Sarah Connor',
-            approvedOn: new Date().toISOString(),
-            salaryImpact: { unpaidDays: 0, deduction: 0 }
-        }
+        { id: 'LR0001', employee_id: 'U001', employee_name: getUserName('U001'), leave_type: 'CL', start_date: '2024-12-20', end_date: '2024-12-21', days: 2, is_half_day: false, status: 'approved', reason: 'Personal work', applied_on: new Date(Date.now() - 7 * 864e5).toISOString(), approved_by: 'Sarah Connor', approved_on: new Date().toISOString(), salary_impact: { unpaidDays: 0, deduction: 0 } },
+        { id: 'LR0002', employee_id: 'U006', employee_name: getUserName('U006'), leave_type: 'SL', start_date: '2024-12-18', end_date: '2024-12-18', days: 1, is_half_day: false, status: 'approved', reason: 'Not feeling well', applied_on: new Date(Date.now() - 5 * 864e5).toISOString(), approved_by: 'Sarah Connor', approved_on: new Date().toISOString(), salary_impact: { unpaidDays: 0, deduction: 0 } },
+        { id: 'LR0003', employee_id: 'U007', employee_name: getUserName('U007'), leave_type: 'PL', start_date: '2025-01-06', end_date: '2025-01-10', days: 5, is_half_day: false, status: 'pending', reason: 'Family vacation', applied_on: new Date(Date.now() - 2 * 864e5).toISOString(), salary_impact: { unpaidDays: 0, deduction: 0 } },
+        { id: 'LR0004', employee_id: 'U008', employee_name: getUserName('U008'), leave_type: 'CL', start_date: '2025-01-02', end_date: '2025-01-03', days: 2, is_half_day: false, status: 'pending', reason: 'Festival celebration', applied_on: new Date(Date.now() - 1 * 864e5).toISOString(), salary_impact: { unpaidDays: 0, deduction: 0 } },
+        { id: 'LR0005', employee_id: 'U009', employee_name: getUserName('U009'), leave_type: 'SL', start_date: '2024-12-15', end_date: '2024-12-16', days: 2, is_half_day: false, status: 'approved', reason: 'Medical checkup', applied_on: new Date(Date.now() - 10 * 864e5).toISOString(), approved_by: 'Sarah Connor', approved_on: new Date().toISOString(), salary_impact: { unpaidDays: 0, deduction: 0 } },
+        { id: 'LR0006', employee_id: 'U010', employee_name: getUserName('U010'), leave_type: 'CL', start_date: '2024-12-25', end_date: '2024-12-25', days: 1, is_half_day: false, status: 'rejected', reason: 'Short notice', applied_on: new Date(Date.now() - 3 * 864e5).toISOString(), approved_by: 'Maria Garcia', approved_on: new Date().toISOString(), rejection_reason: 'Critical project deadline', salary_impact: { unpaidDays: 0, deduction: 0 } },
+        { id: 'LR0007', employee_id: 'U011', employee_name: getUserName('U011'), leave_type: 'PL', start_date: '2025-01-15', end_date: '2025-01-20', days: 6, is_half_day: false, status: 'pending', reason: 'Hometown visit', applied_on: new Date(Date.now() - 1 * 864e5).toISOString(), salary_impact: { unpaidDays: 0, deduction: 0 } },
+        { id: 'LR0008', employee_id: 'U012', employee_name: getUserName('U012'), leave_type: 'CL', start_date: '2024-12-28', end_date: '2024-12-28', days: 1, is_half_day: false, status: 'approved', reason: 'Personal errand', applied_on: new Date(Date.now() - 4 * 864e5).toISOString(), approved_by: 'Sarah Connor', approved_on: new Date().toISOString(), salary_impact: { unpaidDays: 0, deduction: 0 } }
     ];
 
-    // Use 'leave_requests' key as expected by leaveService
-    db.set('leave_requests', leaveRequests);
-    db.set('leaveBalances', leaveBalances);
-    console.log(`✓ Generated ${leaveRequests.length} leave requests, ${leaveBalances.length} leave balances`);
+    for (const lr of leaveRequests) {
+        const { error } = await supabase.from('leave_requests').upsert(lr, { onConflict: 'id' });
+        if (error) console.warn(`Leave request ${lr.id}:`, error.message);
+    }
+    console.log(`✓ Generated ${leaveRequests.length} leave requests`);
 }
 
 // Generate Payroll Data
-function generatePayrollData() {
-    const users = db.get('users') || [];
+async function generatePayrollData() {
+    const { data: users } = await supabase.from('users').select('*');
+    if (!users) return;
+
     const payslips = [];
-    // Generate 5 months of completed payroll history (July-November)
-    // December will be pending for user to process
-    const completedMonths = [
-        { name: 'July', num: 7 },
-        { name: 'August', num: 8 },
-        { name: 'September', num: 9 },
-        { name: 'October', num: 10 },
-        { name: 'November', num: 11 }
+
+    const months2025 = [
+        { num: 1 }, { num: 2 }, { num: 3 }, { num: 4 }, { num: 5 },
+        { num: 6 }, { num: 7 }, { num: 8 }, { num: 9 }
     ];
 
-    // Generate completed payslips for July-November
-    users.forEach(user => {
+    for (const user of users) {
         const salary = user.salary || { basic: 25000, hra: 10000, special: 8000 };
-        const grossPay = salary.basic + salary.hra + salary.special;
+        const grossPay = (salary.basic || 25000) + (salary.hra || 10000) + (salary.special || 8000);
+        const epf = Math.round((salary.basic || 25000) * 0.12);
+        const pt = 200;
+        const tds = grossPay > 50000 ? Math.round(grossPay * 0.05) : 0;
+        const totalDeductions = epf + pt + tds;
+        const netPay = grossPay - totalDeductions;
 
-        completedMonths.forEach((monthData) => {
-            const epf = Math.round(salary.basic * 0.12);
-            const pt = 200;
-            const tds = grossPay > 50000 ? Math.round(grossPay * 0.05) : 0;
-            const totalDeductions = epf + pt + tds;
-            const netPay = grossPay - totalDeductions;
-
+        for (const m of months2025) {
             payslips.push({
-                id: `PAY${user.id}_${2024}_${monthData.num}`,
-                employeeId: user.employeeId,
-                userId: user.id,
-                employeeName: user.name,
-                department: user.department,
-                designation: user.designation,
-                month: monthData.name,
-                year: 2024,
-                date: `2024-${String(monthData.num).padStart(2, '0')}-01`,
-                earnings: [
-                    { label: 'Basic Salary', amount: salary.basic },
-                    { label: 'HRA', amount: salary.hra },
-                    { label: 'Special Allowance', amount: salary.special }
-                ],
-                deductions: [
-                    { label: 'EPF', amount: epf },
-                    { label: 'Professional Tax', amount: pt },
-                    { label: 'TDS', amount: tds }
-                ],
-                grossPay,
-                totalDeductions,
-                netPay,
-                status: 'Paid',
-                paidOn: `2024-${String(monthData.num).padStart(2, '0')}-28`,
-                createdAt: new Date().toISOString()
-            });
-        });
-    });
-
-    // Also generate 2025 payslips (Jan-Sep completed, Oct-Dec pending)
-    const months2025Completed = [
-        { name: 'January', num: 1 },
-        { name: 'February', num: 2 },
-        { name: 'March', num: 3 },
-        { name: 'April', num: 4 },
-        { name: 'May', num: 5 },
-        { name: 'June', num: 6 },
-        { name: 'July', num: 7 },
-        { name: 'August', num: 8 },
-        { name: 'September', num: 9 }
-    ];
-
-    users.forEach(user => {
-        const salary = user.salary || { basic: 25000, hra: 10000, special: 8000 };
-        const grossPay = salary.basic + salary.hra + salary.special;
-
-        months2025Completed.forEach((monthData) => {
-            const epf = Math.round(salary.basic * 0.12);
-            const pt = 200;
-            const tds = grossPay > 50000 ? Math.round(grossPay * 0.05) : 0;
-            const totalDeductions = epf + pt + tds;
-            const netPay = grossPay - totalDeductions;
-
-            payslips.push({
-                id: `PAY${user.id}_${2025}_${monthData.num}`,
-                employeeId: user.employeeId,
-                userId: user.id,
-                employeeName: user.name,
-                department: user.department,
-                designation: user.designation,
-                month: monthData.name,
+                id: `PAY${user.id}_${m.num}_2025`,
+                employee_id: user.id,
+                employee_name: user.name,
+                employee_code: user.employee_id,
+                month: m.num,
                 year: 2025,
-                date: `2025-${String(monthData.num).padStart(2, '0')}-01`,
-                earnings: [
-                    { label: 'Basic Salary', amount: salary.basic },
-                    { label: 'HRA', amount: salary.hra },
-                    { label: 'Special Allowance', amount: salary.special }
-                ],
-                deductions: [
-                    { label: 'EPF', amount: epf },
-                    { label: 'Professional Tax', amount: pt },
-                    { label: 'TDS', amount: tds }
-                ],
-                grossPay,
-                totalDeductions,
-                netPay,
-                status: 'Paid',
-                paidOn: `2025-${String(monthData.num).padStart(2, '0')}-28`,
-                createdAt: new Date().toISOString()
+                designation: user.designation,
+                department: user.department,
+                attendance: { workingDays: 26, presentDays: 24, absentDays: 2, paidLeaveDays: 1, unpaidLeaveDays: 1 },
+                earnings: { basic: salary.basic || 25000, hra: salary.hra || 10000, specialAllowance: salary.special || 8000 },
+                gross_earnings: grossPay,
+                deductions: { pf: epf, professionalTax: pt, tds },
+                total_deductions: totalDeductions,
+                net_salary: netPay,
+                status: 'paid',
+                processed_on: `2025-${String(m.num).padStart(2, '0')}-25T00:00:00Z`,
+                paid_on: `2025-${String(m.num).padStart(2, '0')}-28T00:00:00Z`
             });
-        });
-    });
-
-    // Generate payroll runs - 2024 completed for Jul-Nov, Dec pending
-    // 2025 completed for Jan-Sep, Oct/Nov/Dec pending
-    const payrollRuns = [
-        // 2024 completed months
-        ...completedMonths.map((monthData) => ({
-            id: `RUN_2024_${monthData.num}`,
-            month: monthData.name,
-            year: 2024,
-            status: 'completed',
-            employeesProcessed: users.length,
-            totalGross: payslips.filter(p => p.month === monthData.name && p.year === 2024).reduce((sum, p) => sum + p.grossPay, 0),
-            totalDeductions: payslips.filter(p => p.month === monthData.name && p.year === 2024).reduce((sum, p) => sum + p.totalDeductions, 0),
-            totalNet: payslips.filter(p => p.month === monthData.name && p.year === 2024).reduce((sum, p) => sum + p.netPay, 0),
-            runDate: `2024-${String(monthData.num).padStart(2, '0')}-25`,
-            paidDate: `2024-${String(monthData.num).padStart(2, '0')}-28`
-        })),
-        // December 2024 pending
-        {
-            id: 'RUN_2024_12',
-            month: 'December',
-            year: 2024,
-            status: 'pending',
-            employeesProcessed: 0,
-            totalGross: 0,
-            totalDeductions: 0,
-            totalNet: 0,
-            runDate: null,
-            paidDate: null
-        },
-        // 2025 completed months (Jan-Sep)
-        ...months2025Completed.map((monthData) => ({
-            id: `RUN_2025_${monthData.num}`,
-            month: monthData.name,
-            year: 2025,
-            status: 'completed',
-            employeesProcessed: users.length,
-            totalGross: payslips.filter(p => p.month === monthData.name && p.year === 2025).reduce((sum, p) => sum + p.grossPay, 0),
-            totalDeductions: payslips.filter(p => p.month === monthData.name && p.year === 2025).reduce((sum, p) => sum + p.totalDeductions, 0),
-            totalNet: payslips.filter(p => p.month === monthData.name && p.year === 2025).reduce((sum, p) => sum + p.netPay, 0),
-            runDate: `2025-${String(monthData.num).padStart(2, '0')}-25`,
-            paidDate: `2025-${String(monthData.num).padStart(2, '0')}-28`
-        })),
-        // October 2025 pending
-        {
-            id: 'RUN_2025_10',
-            month: 'October',
-            year: 2025,
-            status: 'pending',
-            employeesProcessed: 0,
-            totalGross: 0,
-            totalDeductions: 0,
-            totalNet: 0,
-            runDate: null,
-            paidDate: null
-        },
-        // November 2025 pending
-        {
-            id: 'RUN_2025_11',
-            month: 'November',
-            year: 2025,
-            status: 'pending',
-            employeesProcessed: 0,
-            totalGross: 0,
-            totalDeductions: 0,
-            totalNet: 0,
-            runDate: null,
-            paidDate: null
-        },
-        // December 2025 pending
-        {
-            id: 'RUN_2025_12',
-            month: 'December',
-            year: 2025,
-            status: 'pending',
-            employeesProcessed: 0,
-            totalGross: 0,
-            totalDeductions: 0,
-            totalNet: 0,
-            runDate: null,
-            paidDate: null
         }
-    ];
+    }
 
-    db.set('payslips', payslips);
-    db.set('payroll_runs', payrollRuns);
-    console.log(`✓ Generated ${payslips.length} payslips, ${payrollRuns.length} payroll runs`);
+    // Upsert in batches
+    const batchSize = 50;
+    for (let i = 0; i < payslips.length; i += batchSize) {
+        const batch = payslips.slice(i, i + batchSize);
+        const { error } = await supabase.from('payslips').upsert(batch, { onConflict: 'id' });
+        if (error) console.warn('Payslip batch error:', error.message);
+    }
+    console.log(`✓ Generated ${payslips.length} payslips`);
 }
 
 // Generate Performance Data
-function generatePerformanceData() {
-    const users = db.get('users') || [];
-    const goals = [];
-    const reviews = [];
+async function generatePerformanceData() {
+    const { data: users } = await supabase.from('users').select('id, employee_id, name').eq('role', 'employee');
+    if (!users) return;
 
     const goalTemplates = [
-        { title: 'Complete Project Milestone', type: 'KRA', weight: 30 },
-        { title: 'Improve Code Quality', type: 'KPI', weight: 20 },
-        { title: 'Team Collaboration', type: 'KRA', weight: 15 },
-        { title: 'Technical Skills Development', type: 'KPI', weight: 20 },
-        { title: 'Client Satisfaction', type: 'KRA', weight: 15 }
+        { title: 'Complete Project Milestone', category: 'Professional', weight: 30 },
+        { title: 'Improve Code Quality', category: 'Professional', weight: 20 },
+        { title: 'Team Collaboration', category: 'Professional', weight: 15 },
+        { title: 'Technical Skills Development', category: 'Learning', weight: 20 },
+        { title: 'Client Satisfaction', category: 'Professional', weight: 15 }
     ];
 
-    users.filter(u => u.role === 'employee').forEach(user => {
+    const goals = [];
+    users.forEach(user => {
         goalTemplates.forEach((template, index) => {
             const progress = Math.floor(Math.random() * 100);
-            const status = progress < 30 ? 'not_started' : progress < 70 ? 'in_progress' : progress < 100 ? 'on_track' : 'completed';
-
             goals.push({
                 id: `GOAL${user.id}_${index}`,
-                employeeId: user.employeeId,
-                userId: user.id,
+                employee_id: user.id,
                 title: template.title,
                 description: `Goal for ${template.title.toLowerCase()} in Q4 2024`,
-                type: template.type,
+                category: template.category,
+                target_date: '2024-12-31',
                 weight: template.weight,
                 progress,
-                status,
-                startDate: '2024-10-01',
-                endDate: '2024-12-31',
-                createdAt: new Date().toISOString()
+                status: progress < 30 ? 'pending' : progress < 100 ? 'in_progress' : 'completed'
             });
         });
     });
 
-    // Sample completed reviews
-    const reviewedEmployees = users.filter(u => u.role === 'employee').slice(0, 3);
-    reviewedEmployees.forEach(user => {
-        reviews.push({
-            id: `REV${user.id}_2024Q3`,
-            employeeId: user.employeeId,
-            userId: user.id,
-            period: 'Q3 2024',
-            overallRating: (3 + Math.random() * 2).toFixed(1),
-            selfRating: (3 + Math.random() * 2).toFixed(1),
-            managerRating: (3 + Math.random() * 2).toFixed(1),
-            status: 'completed',
-            completedAt: '2024-10-15',
-            comments: 'Good performance during the quarter. Met most objectives.',
-            createdAt: new Date().toISOString()
-        });
-    });
-
-    db.set('goals', goals);
-    db.set('reviews', reviews);
-    console.log(`✓ Generated ${goals.length} goals, ${reviews.length} reviews`);
+    // Upsert goals
+    const batchSize = 50;
+    for (let i = 0; i < goals.length; i += batchSize) {
+        const batch = goals.slice(i, i + batchSize);
+        const { error } = await supabase.from('goals').upsert(batch, { onConflict: 'id' });
+        if (error) console.warn('Goals batch error:', error.message);
+    }
+    console.log(`✓ Generated ${goals.length} goals`);
 }
 
 // Generate Exit Data
-function generateExitData() {
-    // Format that matches exitService expectations
+async function generateExitData() {
     const exits = [
         {
-            id: 'EXIT001',
-            employeeId: 'U007',
-            employeeName: 'Amit Kumar',
-            resignationDate: '2024-12-15T10:00:00Z',
-            requestedLWD: '2025-01-15',
-            reason: 'Resignation - Better Opportunity',
-            personalEmail: 'amit.kumar@gmail.com',
+            id: 'EXIT001', employee_id: 'U007', employee_name: 'Amit Kumar',
+            resignation_date: '2024-12-15T10:00:00Z', requested_lwd: '2025-01-15',
+            reason: 'Resignation - Better Opportunity', personal_email: 'amit.kumar@gmail.com',
             status: 'pending_approval',
             clearance: {
-                it: {
-                    department: 'IT',
-                    status: 'pending',
-                    items: [
-                        { name: 'Laptop/Assets Returned', status: 'pending' },
-                        { name: 'Email Access Revoked', status: 'pending' },
-                        { name: 'Software Licenses', status: 'pending' }
-                    ],
-                    clearedBy: null,
-                    clearedAt: null
-                },
-                admin: {
-                    department: 'Admin',
-                    status: 'pending',
-                    items: [
-                        { name: 'ID Card Returned', status: 'pending' },
-                        { name: 'Access Keys/Tokens', status: 'pending' },
-                        { name: 'Storage Keys', status: 'pending' }
-                    ],
-                    clearedBy: null,
-                    clearedAt: null
-                },
-                finance: {
-                    department: 'Finance',
-                    status: 'pending',
-                    items: [
-                        { name: 'No Pending Loans', status: 'pending' },
-                        { name: 'Expense Reimbursements Cleared', status: 'pending' },
-                        { name: 'Travel Advances', status: 'pending' }
-                    ],
-                    clearedBy: null,
-                    clearedAt: null
-                },
-                library: {
-                    department: 'Library',
-                    status: 'pending',
-                    items: [
-                        { name: 'Books/Resource Cards', status: 'pending' }
-                    ],
-                    clearedBy: null,
-                    clearedAt: null
-                }
+                it: { department: 'IT', items: [{ name: 'Laptop/Assets Returned', cleared: false }, { name: 'Email Access Revoked', cleared: false }], completed: false },
+                admin: { department: 'Admin', items: [{ name: 'ID Card Returned', cleared: false }], completed: false },
+                finance: { department: 'Finance', items: [{ name: 'No Pending Loans', cleared: false }], completed: false }
             },
-            fnf: null,
             comments: 'Looking forward to new opportunities'
-        },
-        {
-            id: 'EXIT002',
-            employeeId: 'U008',
-            employeeName: 'Neha Patel',
-            resignationDate: '2024-11-20T09:30:00Z',
-            requestedLWD: '2024-12-20',
-            reason: 'Resignation - Personal Reasons',
-            personalEmail: 'neha.patel@gmail.com',
-            status: 'approved',
-            approvalDate: '2024-11-22T10:00:00Z',
-            clearance: {
-                it: {
-                    department: 'IT',
-                    status: 'cleared',
-                    items: [
-                        { name: 'Laptop/Assets Returned', status: 'cleared' },
-                        { name: 'Email Access Revoked', status: 'cleared' },
-                        { name: 'Software Licenses', status: 'cleared' }
-                    ],
-                    clearedBy: 'Sarah Connor',
-                    clearedAt: '2024-12-18T10:00:00Z'
-                },
-                admin: {
-                    department: 'Admin',
-                    status: 'cleared',
-                    items: [
-                        { name: 'ID Card Returned', status: 'cleared' },
-                        { name: 'Access Keys/Tokens', status: 'cleared' },
-                        { name: 'Storage Keys', status: 'cleared' }
-                    ],
-                    clearedBy: 'Robert Smith',
-                    clearedAt: '2024-12-19T11:00:00Z'
-                },
-                finance: {
-                    department: 'Finance',
-                    status: 'pending',
-                    items: [
-                        { name: 'No Pending Loans', status: 'cleared' },
-                        { name: 'Expense Reimbursements Cleared', status: 'pending' },
-                        { name: 'Travel Advances', status: 'cleared' }
-                    ],
-                    clearedBy: null,
-                    clearedAt: null
-                },
-                library: {
-                    department: 'Library',
-                    status: 'pending',
-                    items: [
-                        { name: 'Books/Resource Cards', status: 'pending' }
-                    ],
-                    clearedBy: null,
-                    clearedAt: null
-                }
-            },
-            fnf: null,
-            comments: 'Family commitments'
-        },
-        {
-            id: 'EXIT003',
-            employeeId: 'U015',
-            employeeName: 'Rahul Mehta',
-            resignationDate: '2024-10-01T11:00:00Z',
-            requestedLWD: '2024-10-31',
-            reason: 'Relocation',
-            personalEmail: 'rahul.mehta@gmail.com',
-            status: 'completed',
-            approvalDate: '2024-10-03T10:00:00Z',
-            completedAt: '2024-11-05T10:00:00Z',
-            clearance: {
-                it: {
-                    department: 'IT',
-                    status: 'cleared',
-                    items: [
-                        { name: 'Laptop/Assets Returned', status: 'cleared' },
-                        { name: 'Email Access Revoked', status: 'cleared' },
-                        { name: 'Software Licenses', status: 'cleared' }
-                    ],
-                    clearedBy: 'Sarah Connor',
-                    clearedAt: '2024-10-25T10:00:00Z'
-                },
-                admin: {
-                    department: 'Admin',
-                    status: 'cleared',
-                    items: [
-                        { name: 'ID Card Returned', status: 'cleared' },
-                        { name: 'Access Keys/Tokens', status: 'cleared' },
-                        { name: 'Storage Keys', status: 'cleared' }
-                    ],
-                    clearedBy: 'Robert Smith',
-                    clearedAt: '2024-10-26T11:00:00Z'
-                },
-                finance: {
-                    department: 'Finance',
-                    status: 'cleared',
-                    items: [
-                        { name: 'No Pending Loans', status: 'cleared' },
-                        { name: 'Expense Reimbursements Cleared', status: 'cleared' },
-                        { name: 'Travel Advances', status: 'cleared' }
-                    ],
-                    clearedBy: 'Maria Garcia',
-                    clearedAt: '2024-10-28T14:00:00Z'
-                },
-                library: {
-                    department: 'Library',
-                    status: 'cleared',
-                    items: [
-                        { name: 'Books/Resource Cards', status: 'cleared' }
-                    ],
-                    clearedBy: 'Robert Smith',
-                    clearedAt: '2024-10-29T09:00:00Z'
-                }
-            },
-            fnf: {
-                unpaidSalary: 45000,
-                leaveEncashment: 25000,
-                totalEarnings: 70000,
-                totalDeductions: 0,
-                netFnF: 70000,
-                calculatedAt: '2024-11-03T10:00:00Z'
-            },
-            comments: 'Relocating to different city'
         }
     ];
 
-    // Use 'employee_exits' key as expected by exitService
-    db.set('employee_exits', exits);
+    for (const exit of exits) {
+        const { error } = await supabase.from('employee_exits').upsert(exit, { onConflict: 'id' });
+        if (error) console.warn(`Exit ${exit.id}:`, error.message);
+    }
     console.log(`✓ Generated ${exits.length} exit records`);
 }
 
-// Generate Approval Data
-function generateApprovalData() {
-    const approvals = [
-        { id: 'APR001', type: 'leave', requestId: 'LV0003', requester: 'U007', approver: 'U002', status: 'pending', createdAt: new Date().toISOString() },
-        { id: 'APR002', type: 'leave', requestId: 'LV0004', requester: 'U008', approver: 'U003', status: 'pending', createdAt: new Date().toISOString() },
-        { id: 'APR003', type: 'leave', requestId: 'LV0007', requester: 'U011', approver: 'U002', status: 'pending', createdAt: new Date().toISOString() },
-        { id: 'APR004', type: 'resignation', requestId: 'EXIT001', requester: 'U007', approver: 'U002', status: 'pending', createdAt: new Date().toISOString() },
-        { id: 'APR005', type: 'expense', requestId: 'EXP001', requester: 'U006', approver: 'U002', status: 'pending', amount: 5000, description: 'Project supplies', createdAt: new Date().toISOString() }
-    ];
-
-    db.set('approvals', approvals);
-    console.log(`✓ Generated ${approvals.length} pending approvals`);
-}
-
-// Generate Shift Data
-function generateShiftData() {
-    const shifts = [
-        { id: 'SHIFT001', name: 'General Shift', startTime: '09:00', endTime: '18:00', graceMinutes: 15, status: 'active' },
-        { id: 'SHIFT002', name: 'Morning Shift', startTime: '06:00', endTime: '15:00', graceMinutes: 10, status: 'active' },
-        { id: 'SHIFT003', name: 'Night Shift', startTime: '21:00', endTime: '06:00', graceMinutes: 15, status: 'active' }
-    ];
-
-    const users = db.get('users') || [];
-    const roster = users.map(user => ({
-        userId: user.id,
-        employeeId: user.employeeId,
-        shiftId: 'SHIFT001',
-        effectiveFrom: '2024-01-01',
-        effectiveTo: null, // Ongoing
-        status: 'active'
-    }));
-
-    db.set('shifts', shifts);
-    db.set('roster', roster);
-    console.log(`✓ Generated ${shifts.length} shifts, ${roster.length} roster assignments`);
-}
-
-// Generate Holidays
-function generateHolidays() {
-    const existingHolidays = db.get('holidays') || [];
-    if (existingHolidays.length > 0) return;
-
-    const holidays = [
-        { id: 'H001', name: 'New Year', date: '2025-01-01', type: 'public', year: 2025 },
-        { id: 'H002', name: 'Republic Day', date: '2025-01-26', type: 'public', year: 2025 },
-        { id: 'H003', name: 'Holi', date: '2025-03-14', type: 'public', year: 2025 },
-        { id: 'H004', name: 'Good Friday', date: '2025-04-18', type: 'public', year: 2025 },
-        { id: 'H005', name: 'Independence Day', date: '2025-08-15', type: 'public', year: 2025 },
-        { id: 'H006', name: 'Gandhi Jayanti', date: '2025-10-02', type: 'public', year: 2025 },
-        { id: 'H007', name: 'Diwali', date: '2025-10-20', type: 'public', year: 2025 },
-        { id: 'H008', name: 'Christmas', date: '2025-12-25', type: 'public', year: 2025 }
-    ];
-
-    db.set('holidays', holidays);
-    console.log(`✓ Generated ${holidays.length} holidays for 2025`);
-}
-
 // Check if demo data already exists
-export function isDemoDataGenerated() {
-    return db.get('demoDataGenerated') === true;
+export async function isDemoDataGenerated() {
+    const state = await db.getState('demoDataGenerated');
+    return state === true;
 }
 
-// Force regenerate demo data (for testing)
-export function regenerateDemoData() {
-    db.remove('demoDataGenerated');
-    generateDemoData();
+// Force regenerate demo data
+export async function regenerateDemoData() {
+    await db.setState('demoDataGenerated', null);
+    await generateDemoData();
 }
